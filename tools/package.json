@@ -1,0 +1,22 @@
+{
+  "name": "nanotracker-plugin-sdk-tools",
+  "version": "1.0.0",
+  "description": "CLIs for packaging and validating nanoTracker plugin archives",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "ntpack": "./ntpack.mjs",
+    "ntvalidate": "./ntvalidate.mjs"
+  },
+  "scripts": {
+    "ntpack": "node ntpack.mjs",
+    "ntvalidate": "node ntvalidate.mjs",
+    "test": "node test.mjs"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1"
+  }
+}

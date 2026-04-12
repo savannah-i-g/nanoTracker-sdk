@@ -1,0 +1,8 @@
+# Build inputs — keep them in git but don't ship them inside the .ntins.
+# The tracker only needs plugin.json + web/doom.html + LICENSE + CREDITS.md
+# at runtime. Everything under src/ is authoring-time tooling.
+src/
+
+# The downloaded upstream binary. Also in .gitignore, but list here too
+# so even if someone commits it by accident, ntpack skips it.
+doom.wasm

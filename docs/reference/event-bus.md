@@ -1,0 +1,248 @@
+# VoiceEngineEvent reference
+
+The nanoTracker host fires `VoiceEngineEvent`s after every note /
+parameter / pitch / gain dispatch on a workspace instrument. These
+events are the payload the host forwards to webview plugins over the
+`postMessage` bridge. This page documents every event shape so
+webview authors can write type-safe handlers.
+
+## TypeScript definition
+
+```typescript
+export type VoiceEngineEvent =
+  | { type: "noteOn";      note: number; velocity: number; time: number }
+  | { type: "noteOff";     note: number; time: number }
+  | { type: "param";       key: string;  value: number }
+  | { type: "pitch";       frequencyHz: number; time: number }
+  | { type: "gain";        gain: number; time: number }
+  | { type: "allNotesOff"; time: number };
+```
+
+Every event is a plain object with a `type` discriminator. Webview
+handlers should switch on `type` and narrow:
+
+```js
+window.addEventListener("message", (e) => {
+  const ev = e.data;
+  if (!ev || typeof ev !== "object") return;
+  switch (ev.type) {
+    case "noteOn":      /* ev.note, ev.velocity, ev.time */ break;
+    case "noteOff":     /* ev.note, ev.time */ break;
+    case "param":       /* ev.key, ev.value */ break;
+    case "pitch":       /* ev.frequencyHz, ev.time */ break;
+    case "gain":        /* ev.gain, ev.time */ break;
+    case "allNotesOff": /* ev.time */ break;
+  }
+});
+```
+
+## Event types
+
+### `noteOn`
+
+Fires when the host dispatches a note-start on the instrument.
+
+```json
+{ "type": "noteOn", "note": 60, "velocity": 100, "time": 1.234 }
+```
+
+| Field | Type | Range | Notes |
+|---|---|---|---|
+| `type` | string | — | Always `"noteOn"` |
+| `note` | number | 0–127 | MIDI note number (60 = C4) |
+| `velocity` | number | 0–127 | MIDI velocity (127 is loudest) |
+| `time` | number | seconds | `AudioContext.currentTime` value at dispatch |
+
+**Sources that fire this:**
+
+- Tracker channel playback hits a row with a note cell
+- User plays a preview note from the tracker keyboard
+- Direct `workspace.noteOn(workspaceId, note, velocity)` call (e.g.,
+  from MIDI input)
+- `workspace.noteOnFromChannel(workspaceId, ch, note, velocity)` — the
+  channel-aware variant used by tracker playback
+
+**Not fired by:**
+
+- Loading a plugin
+- Hovering over a note in the pattern editor
+- Keyboard events inside a webview iframe (those are iframe-internal)
+
+### `noteOff`
+
+Fires when the host dispatches a note-end.
+
+```json
+{ "type": "noteOff", "note": 60, "time": 1.456 }
+```
+
+| Field | Type | Range | Notes |
+|---|---|---|---|
+| `type` | string | — | Always `"noteOff"` |
+| `note` | number | 0–127 | MIDI note number |
+| `time` | number | seconds | `AudioContext.currentTime` value at dispatch |
+
+**Important:** `noteOff` events can arrive for notes that `noteOn`
+hasn't been seen for (e.g., if the iframe mounted mid-playback and
+the bridge's ready handshake flushed a late `noteOff`). Handle
+gracefully — don't assume every `noteOff` has a matching prior
+`noteOn`.
+
+### `param`
+
+Fires when a plugin parameter changes — either from UI interaction,
+automation, or a preset load.
+
+```json
+{ "type": "param", "key": "cutoff", "value": 2400 }
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `type` | string | Always `"param"` |
+| `key` | string | Matches a `parameters[].key` declared in `plugin.json` |
+| `value` | number | New value in the parameter's native range |
+
+**Note:** `param` events do NOT carry a `time` field. They're applied
+immediately on the main thread — the host's audio-side work (setting
+the relevant AudioParam) happens in a separate code path with its
+own timestamp.
+
+**Update frequency:** UI knob drags can fire `param` events at display
+refresh rate (~60 Hz) while the user drags. Your webview handler
+should be cheap — don't trigger expensive work per event. If you
+need to throttle, use your own rAF-based debouncer.
+
+### `pitch`
+
+Fires when the host dispatches a per-voice pitch update mid-note.
+
+```json
+{ "type": "pitch", "frequencyHz": 440.5, "time": 1.234 }
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `type` | string | Always `"pitch"` |
+| `frequencyHz` | number | New frequency in Hz |
+| `time` | number | `AudioContext.currentTime` value |
+
+**Sources that fire this:**
+
+- Portamento / glide during tracker playback
+- Vibrato effect (MOD effect `4xy`)
+- Arpeggio effect (MOD effect `0xy`)
+- Direct `workspace.setPitch(workspaceId, hz)` call
+
+**Semantics:** this event is "change the pitch of the voice that's
+currently held on this instrument." The host doesn't track which
+voice it applies to in the webview bridge — if your webview plugin
+is a polyphonic synth hosted in an iframe, you need to correlate
+with the most recent `noteOn` yourself.
+
+### `gain`
+
+Fires when the host dispatches a per-voice gain update mid-note.
+
+```json
+{ "type": "gain", "gain": 0.75, "time": 1.234 }
+```
+
+| Field | Type | Range | Notes |
+|---|---|---|---|
+| `type` | string | — | Always `"gain"` |
+| `gain` | number | 0–1 | Linear gain (0 = silent, 1 = full) |
+| `time` | number | seconds | `AudioContext.currentTime` value |
+
+**Sources that fire this:**
+
+- Volume slide effect (MOD effects `Axy`, `5xy`)
+- Tremolo effect (MOD effect `7xy`)
+- Direct `workspace.setGain(workspaceId, gain)` call
+- Tracker volume column writes
+
+### `allNotesOff`
+
+Fires when the host silences all voices on the instrument — transport
+stop, panic button, or plugin removal.
+
+```json
+{ "type": "allNotesOff", "time": 1.567 }
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `type` | string | Always `"allNotesOff"` |
+| `time` | number | `AudioContext.currentTime` value |
+
+**Semantics:** release every currently-held voice immediately. The
+webview handler should mirror this by releasing whatever game /
+emulator state maps to "all keys up." See the DOOM example's
+`releaseAll()` function for a reference implementation.
+
+## What the event bus does NOT forward
+
+The following **do not** generate webview events in v1:
+
+- **Plugin load/unload** — no `init` or `dispose` event. Use the
+  iframe's own `load` lifecycle.
+- **Raw MOD effect-column bytes** — reserved for a v2
+  `forwardEffects: true` flag (not yet implemented).
+- **Audio samples** — no PCM data forwarded to the iframe. Reserved
+  for a v2 `acceptsAudioFrames: true` flag.
+- **Other instruments' events** — the bridge is strictly per-instrument.
+  A webview on instrument A doesn't see events on instrument B.
+- **Transport state** (play / stop / record) — the iframe can infer
+  from `noteOn` / `allNotesOff` patterns but doesn't receive an
+  explicit transport signal.
+- **Tempo / BPM changes** — not forwarded. The iframe gets event
+  timestamps but no global BPM context.
+
+If any of these matter for your plugin, either:
+
+1. File a feature request for a new event type
+2. Pass the data through a parameter (declare a `bpm` parameter and
+   update it from your host code — works but clunky)
+3. Accept the limitation — v1 is intentionally minimal
+
+## Host-side filtering
+
+The webview control has two bridge filter flags:
+
+- `forwardNotes` (default `true`) — forwards `noteOn`, `noteOff`,
+  `pitch`, `gain`, `allNotesOff`
+- `forwardParams` (default `true`) — forwards `param`
+
+Set either to `false` in `plugin.json` to save postMessage bandwidth:
+
+```json
+{ "type": "webview", "source": "web/scope.html", "forwardNotes": false }
+```
+
+A parameter-only visualizer doesn't need note events; a pure game
+controller doesn't need param events. Filter what you don't use.
+
+## Timing
+
+`time` fields come from `AudioContext.currentTime` on the host side,
+translated to seconds. They're accurate to within the host's
+`currentTime` precision (~sub-millisecond). Use for:
+
+- Scheduling precise game ticks aligned to tracker beats
+- Computing inter-note intervals for animation
+- Correlating events with host audio playback
+
+**Don't use for:**
+
+- Real-world wall clock time (the audio clock drifts relative to
+  `performance.now()`)
+- Cross-session consistency (`currentTime` resets to 0 on every
+  page load)
+
+## See also
+
+- [`../09-webview.md`](../09-webview.md) — webview control reference
+- [`../10-wasm-in-webview.md`](../10-wasm-in-webview.md) — DOOM
+  walkthrough (the biggest real-world consumer of these events)
+- [`../../examples/doom-wasm/src/template.html`](../../examples/doom-wasm/src/template.html) —
+  production-quality event handler covering every type in the union

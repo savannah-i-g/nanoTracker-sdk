@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 2,
+  "manifest": {
+    "name": "MY WORKLET",
+    "version": "0.1.0",
+    "type": "instrument",
+    "author": "you",
+    "description": "Minimal AudioWorklet instrument — monophonic sawtooth with a ladder filter"
+  },
+  "parameters": [
+    { "key": "cutoff",   "label": "CUTOFF",   "min": 40,    "max": 16000, "default": 1200, "step": 1,    "unit": "Hz", "displayDecimals": 0, "curve": "exponential" },
+    { "key": "resonance","label": "RESO",     "min": 0,     "max": 0.95,  "default": 0.3,  "step": 0.01,               "displayDecimals": 2 },
+    { "key": "envAmt",   "label": "ENV AMT",  "min": 0,     "max": 1,     "default": 0.6,  "step": 0.01,               "displayDecimals": 2 },
+    { "key": "decay",    "label": "DECAY",    "min": 0.01,  "max": 2,     "default": 0.3,  "step": 0.01,  "unit": "s", "displayDecimals": 2 },
+    { "key": "detune",   "label": "DETUNE",   "min": -100,  "max": 100,   "default": 0,    "step": 1,     "unit": "c", "displayDecimals": 0 }
+  ],
+  "dsp": {
+    "processorName": "my-worklet-processor",
+    "voices": 1,
+    "voiceStealing": "oldest",
+    "oscillators": [],
+    "samples": [],
+    "envelope": { "attack": 0.001, "decay": 0.3, "sustain": 0, "release": 0.05 },
+    "filter": null
+  },
+  "ui": {
+    "layout": "flex",
+    "accentColor": "#66ccff",
+    "controls": [
+      { "type": "knob", "parameter": "cutoff",    "label": "CUT"  },
+      { "type": "knob", "parameter": "resonance", "label": "RES"  },
+      { "type": "knob", "parameter": "envAmt",    "label": "ENV"  },
+      { "type": "knob", "parameter": "decay",     "label": "DEC"  },
+      { "type": "knob", "parameter": "detune",    "label": "DET"  }
+    ]
+  }
+}

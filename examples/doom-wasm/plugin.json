@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 3,
+  "manifest": {
+    "name": "DOOM",
+    "version": "1.0.0",
+    "type": "instrument",
+    "author": "nanoTracker / id Software (shareware) / Jacob Enget (doom.wasm, GPL-2.0)",
+    "description": "DOOM as a nanoTracker instrument. Bundled doom.wasm (GPL-2.0, shareware WAD embedded). Notes drive the controller: C=forward D=back E=turn-L F=turn-R C#/D#=strafe F#=fire G=use A=run(shift) A#=enter B=escape. Top octave (C-7+) selects weapon 1-8."
+  },
+  "requires": ["webview-ui"],
+  "parameters": [
+    { "key": "dummy", "label": "FOCUS", "min": 0, "max": 1, "default": 0.5, "step": 0.01, "displayDecimals": 2 }
+  ],
+  "dsp": {
+    "processorName": null,
+    "voices": 1,
+    "voiceStealing": "oldest",
+    "oscillators": [],
+    "samples": [],
+    "envelope": { "attack": 0.001, "decay": 0.01, "sustain": 1, "release": 0.01 },
+    "filter": null
+  },
+  "ui": {
+    "layout": "flex",
+    "accentColor": "#ff2200",
+    "controls": [
+      {
+        "type": "webview",
+        "source": "web/doom.html",
+        "aspectRatio": "16/10",
+        "forwardNotes": true,
+        "forwardParams": false
+      },
+      { "type": "knob", "parameter": "dummy", "label": "FOCUS" }
+    ]
+  }
+}

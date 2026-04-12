@@ -1,0 +1,6 @@
+# Built artifacts — rebuild from source with `node src/bundle.mjs`
+web/doom.html
+
+# Downloaded upstream binary — fetch with:
+#   curl -sSL -o doom.wasm https://github.com/jacobenget/doom.wasm/releases/download/v0.1.0/doom-v0.1.0.wasm
+doom.wasm

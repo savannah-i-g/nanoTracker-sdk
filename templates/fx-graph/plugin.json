@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 2,
+  "manifest": {
+    "name": "MY DELAY",
+    "version": "0.1.0",
+    "type": "fx",
+    "author": "you",
+    "description": "Minimal feedback-delay FX starter — no AudioWorklet, pure declarative graph"
+  },
+  "parameters": [
+    { "key": "d1.delayTime", "label": "TIME",     "min": 0.01, "max": 1.5, "default": 0.375, "step": 0.01, "unit": "s", "displayDecimals": 2 },
+    { "key": "fb.gain",      "label": "FEEDBACK", "min": 0,    "max": 0.9, "default": 0.5,   "step": 0.01,              "displayDecimals": 2 },
+    { "key": "wet.gain",     "label": "WET",      "min": 0,    "max": 1,   "default": 0.5,   "step": 0.01,              "displayDecimals": 2 },
+    { "key": "dry.gain",     "label": "DRY",      "min": 0,    "max": 1,   "default": 0.8,   "step": 0.01,              "displayDecimals": 2 },
+    { "key": "lpf.frequency","label": "TONE",     "min": 200,  "max": 18000,"default": 6000, "step": 10,  "unit": "Hz", "displayDecimals": 0 }
+  ],
+  "dsp": {
+    "processorName": null,
+    "nodes": [
+      { "id": "dry", "type": "gain",  "gain": 0.8 },
+      { "id": "wet", "type": "gain",  "gain": 0.5 },
+      { "id": "d1",  "type": "delay", "maxDelay": 2, "delayTime": 0.375 },
+      { "id": "fb",  "type": "gain",  "gain": 0.5 },
+      { "id": "lpf", "type": "biquad","filterType": "lowpass", "frequency": 6000, "Q": 0.707 }
+    ],
+    "connections": [
+      { "from": "input", "to": "dry" },
+      { "from": "dry",   "to": "output" },
+
+      { "from": "input", "to": "d1" },
+      { "from": "d1",    "to": "lpf" },
+      { "from": "lpf",   "to": "fb" },
+      { "from": "fb",    "to": "d1" },
+
+      { "from": "lpf",   "to": "wet" },
+      { "from": "wet",   "to": "output" }
+    ]
+  },
+  "ui": {
+    "layout": "flex",
+    "accentColor": "#ff88cc",
+    "controls": [
+      { "type": "knob", "parameter": "d1.delayTime",  "label": "TIME"  },
+      { "type": "knob", "parameter": "fb.gain",       "label": "FBK"   },
+      { "type": "knob", "parameter": "lpf.frequency", "label": "TONE"  },
+      { "type": "knob", "parameter": "wet.gain",      "label": "WET"   },
+      { "type": "knob", "parameter": "dry.gain",      "label": "DRY"   }
+    ]
+  }
+}

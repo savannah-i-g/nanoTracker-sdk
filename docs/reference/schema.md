@@ -1,0 +1,631 @@
+# `plugin.json` schema reference
+
+Every field of every block, with type, version, and a one-line
+description. This page is the dense per-field lookup; the narrative
+docs in `../01-plugin-format.md` and its neighbours explain how to
+actually use them.
+
+**Version markers**: <sup>v1</sup> / <sup>v2</sup> / <sup>v3</sup>
+next to a field means it was introduced in that schema version.
+Unmarked fields are v1.
+
+---
+
+## Top level
+
+```ts
+{
+  schemaVersion: 1 | 2 | 3,
+  manifest:      PluginManifest,
+  parameters?:   PluginParamDef[],
+  dsp:           PluginFxDsp | PluginInstrumentDsp,
+  ui?:           PluginUiDef,
+  presets?:      PluginPreset[],        // v2+
+  loopPresets?:  PluginLoopPreset[],    // instruments only
+  requires?:     string[],              // v3+ capability flags
+}
+```
+
+| Field | v | Required | Notes |
+|---|---|---|---|
+| `schemaVersion` | — | yes | Integer 1, 2, or 3 |
+| `manifest` | — | yes | Plugin identity (see below) |
+| `parameters` | — | no | Array of `PluginParamDef` |
+| `dsp` | — | yes | `PluginFxDsp` or `PluginInstrumentDsp`; branches on `manifest.type` |
+| `ui` | — | no | Optional UI definition; auto-generated when missing |
+| `presets` | v2 | no | Factory parameter snapshots |
+| `loopPresets` | — | no | Instrument-only step sequences |
+| `requires` | v3 | no | Capability flag gating |
+
+Unknown top-level fields are silently ignored by the loader.
+
+---
+
+## `PluginManifest`
+
+```ts
+{
+  name:         string,
+  version:      string,
+  type:         "instrument" | "fx",
+  author?:      string,
+  description?: string,
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `name` | yes | Display name; forms part of plugin id `"plugin:<name>@<version>"` |
+| `version` | yes | Free-form string, convention is semver |
+| `type` | yes | Routes to correct DSP block schema |
+| `author` | no | Attribution shown in UI |
+| `description` | no | One-line summary shown in UI |
+
+---
+
+## `PluginParamDef`
+
+```ts
+{
+  key:               string,
+  label:             string,
+  min:               number,
+  max:               number,
+  default:           number,
+  step:              number,
+  unit?:             string,
+  displayDecimals?:  number,
+  group?:            string,      // v2
+  curve?:            "linear" | "exponential" | "logarithmic",  // v2
+}
+```
+
+| Field | v | Required | Notes |
+|---|---|---|---|
+| `key` | — | yes | Unique identifier; referenced from UI, mod routes, presets |
+| `label` | — | yes | ALL-CAPS display label |
+| `min` | — | yes | Lower bound inclusive |
+| `max` | — | yes | Upper bound inclusive |
+| `default` | — | yes | Initial value |
+| `step` | — | yes | Quantisation step |
+| `unit` | — | no | Display suffix (e.g. `"Hz"`, `"s"`) |
+| `displayDecimals` | — | no | Precision digits |
+| `group` | v2 | no | Cosmetic grouping hint |
+| `curve` | v2 | no | Non-linear UI value mapping |
+
+Narrative: [`../02-parameters.md`](../02-parameters.md)
+
+---
+
+## `PluginPreset` (factory presets, v2+)
+
+```ts
+{
+  name:   string,
+  values: Record<string, number>,  // parameter key → value
+}
+```
+
+Applying a preset writes every key/value pair to the plugin's
+parameters at once.
+
+---
+
+## `PluginLoopPreset` (instruments only)
+
+```ts
+{
+  name:  string,
+  steps: PluginPresetStep[],
+}
+```
+
+### `PluginPresetStep`
+
+```ts
+{
+  padIndex: number,      // 1-based, 0 = silent
+  pitch?:   number,      // semitones, default 0
+  volume?:  number,      // 0-100, default 100
+  reverse?: boolean,     // default false
+  active?:  boolean,     // default true
+}
+```
+
+---
+
+## `PluginFxDsp`
+
+```ts
+{
+  processorName: string | null,
+  nodes:         PluginDspNode[],
+  connections:   PluginDspConnection[],
+  modRoutes?:    PluginModRoute[],    // v2
+}
+```
+
+| Field | v | Required | Notes |
+|---|---|---|---|
+| `processorName` | — | yes | AudioWorklet processor name, or `null` for pure declarative graph |
+| `nodes` | — | yes | Node definitions |
+| `connections` | — | yes | Edges between nodes |
+| `modRoutes` | v2 | no | Modulation routing |
+
+Reserved node IDs: `"input"`, `"output"` (pre-created by the host).
+
+Narrative: [`../05-fx-graphs.md`](../05-fx-graphs.md)
+
+---
+
+## `PluginInstrumentDsp`
+
+```ts
+{
+  processorName:  string | null,
+  voices:         number,
+  voiceStealing:  "oldest" | "quietest" | "none",
+  oscillators:    PluginOscillatorDef[],
+  samples:        PluginSampleZone[],
+  envelope:       PluginEnvelope,
+  filter:         PluginFilterDef | null,
+
+  envelopes?:     PluginEnvelopeDef[],    // v2
+  lfos?:          PluginLfoDef[],         // v2
+  modRoutes?:     PluginModRoute[],       // v2
+  filters?:       PluginFilterDef[],      // v2
+  unison?:        PluginUnisonDef,        // v2
+  portamento?:    PluginPortamentoDef,    // v2
+  noiseType?:     "white" | "pink" | "brown",  // v2
+
+  graph?:         PluginGraph,            // v3
+  sharedNodes?:   string[],               // v3
+  voiceInput?:    string,                 // v3, default "voiceIn"
+  voiceOutput?:   string,                 // v3, default "voiceOut"
+  requires?:      string[],               // v3
+  releaseTail?:   number,                 // v3, default 8 seconds
+  worklet?:       PluginWorkletInstrumentDef,  // v3
+}
+```
+
+Narrative:
+- [`../04-instruments.md`](../04-instruments.md) — v1/v2 engine
+- [`../06-instrument-graphs.md`](../06-instrument-graphs.md) — v3 graph
+- [`../08-worklet-v3.md`](../08-worklet-v3.md) — v3 worklet form
+
+---
+
+## `PluginDspNode`
+
+```ts
+{
+  id:                      string,
+  type:                    FxNodeType,
+  scope?:                  "voice" | "shared",   // v3
+  // v1 node-type-specific fields:
+  gain?:                   number,
+  maxDelay?:               number,
+  delayTime?:              number,
+  impulse?:                string,
+  normalize?:              boolean,
+  frequency?:              number,
+  Q?:                      number,
+  filterType?:             BiquadFilterType,
+  threshold?:              number,
+  ratio?:                  number,
+  attack?:                 number,
+  release?:                number,
+  knee?:                   number,
+  pan?:                    number,
+  curve?:                  "sigmoid" | "clip" | "fold",
+  drive?:                  number,
+  // v2 additions:
+  channelCount?:           number,
+  oscType?:                OscillatorType,
+  oscFrequency?:           number,
+  lfoShape?:               LfoShape,
+  lfoRate?:                number,
+  lfoDepth?:               number,
+  envStages?:              PluginEnvelopeStage[],
+  fftSize?:                number,
+  // v3 additions:
+  sampleFile?:             string,
+  playbackMode?:           "forward" | "reverse" | "pingpong" | "freeze",
+  grainEnvelope?:          "hann" | "triangle" | "rectangular",
+  tableFile?:              string,
+  frameCount?:             number,
+  interpolation?:          "linear" | "none",
+  parameterDescriptors?:   PluginWorkletParamDescriptor[],
+}
+```
+
+### `FxNodeType`
+
+| Type | v | Purpose |
+|---|---|---|
+| `gain` | — | Amplification / mixing point |
+| `delay` | — | Time-based delay line |
+| `biquad` | — | 2nd-order filter (lowpass, highpass, bandpass, peaking, etc.) |
+| `compressor` | — | Dynamics compressor |
+| `convolver` | — | Impulse-response reverb |
+| `panner` | — | Stereo positioning |
+| `waveshaper` | — | Non-linear saturation / distortion |
+| `worklet` | — | Custom AudioWorkletNode from `script.js` |
+| `mixer` | v2 | Summing GainNode (semantic alias) |
+| `splitter` | v2 | ChannelSplitterNode |
+| `merger` | v2 | ChannelMergerNode |
+| `oscillator` | v2 | OscillatorNode (audio-rate) |
+| `constant` | v2 | ConstantSourceNode (DC bias) |
+| `analyser` | v2 | AnalyserNode (FFT pass-through) |
+| `lfo` | v2 | LFO (Osc + Gain pair) |
+| `envelope` | v2 | Multi-stage envelope generator |
+| `granular` | v3 | Host-shipped granular synth (requires `"granular"` capability) |
+| `wavetable` | v3 | Host-shipped wavetable synth (requires `"wavetable"` capability) |
+
+### Per-type fields
+
+Which fields apply to which node type:
+
+| Field | Applies to |
+|---|---|
+| `gain` (field) | `gain`, `mixer` |
+| `maxDelay`, `delayTime` | `delay` |
+| `impulse`, `normalize` | `convolver` |
+| `frequency`, `Q`, `filterType` | `biquad` |
+| `threshold`, `ratio`, `attack`, `release`, `knee` | `compressor` |
+| `pan` | `panner` |
+| `curve`, `drive` | `waveshaper` |
+| `channelCount` | `splitter`, `merger` (default 2) |
+| `oscType`, `oscFrequency` | `oscillator` |
+| `lfoShape`, `lfoRate`, `lfoDepth` | `lfo` |
+| `envStages` | `envelope` |
+| `fftSize` | `analyser` (default 256) |
+| `sampleFile`, `playbackMode`, `grainEnvelope` | `granular` |
+| `tableFile`, `frameCount`, `interpolation` | `wavetable` |
+| `parameterDescriptors` | `worklet` |
+
+### Scope (v3, instrument graphs only)
+
+- `scope: "voice"` — instantiated per active note (default for
+  instrument graph nodes)
+- `scope: "shared"` — instantiated once per plugin (default for FX
+  graph nodes)
+
+---
+
+## `PluginDspConnection`
+
+```ts
+{
+  from:          string,    // node id or "input"
+  to:            string,    // node id or "output"
+  toParam?:      string,    // v2: target AudioParam instead of input
+  outputIndex?:  number,    // v2: ChannelSplitterNode output channel
+  inputIndex?:   number,    // v2: ChannelMergerNode input channel
+}
+```
+
+---
+
+## `PluginModRoute`
+
+v2 form (single target):
+
+```ts
+{
+  source:   string,    // node id or reserved ("velocity"/"note"/"gate"/"pitch"/"follower:<id>")
+  target:   string,    // "nodeId.paramName"
+  depth:    number,
+  bipolar?: boolean,
+}
+```
+
+v3 form (multi target):
+
+```ts
+{
+  source:  string,
+  targets: PluginModRouteTarget[],
+}
+```
+
+### `PluginModRouteTarget` (v3)
+
+```ts
+{
+  target:    string,    // "nodeId.paramName"
+  depth:     number,
+  bipolar?:  boolean,
+  curve?:    "linear" | "exponential" | "logarithmic",
+  transform?: "none" | "invert" | "abs" | "square" | "unipolar" | "bipolar",
+  offset?:   number,
+  scale?:    number,
+  slew?:     number,    // seconds (single-pole lowpass smoother)
+}
+```
+
+### Reserved source names
+
+| Source | Type | Emits |
+|---|---|---|
+| `velocity` | ConstantSource | 0..1, velocity / 127 |
+| `note` | ConstantSource | MIDI note number |
+| `gate` | ConstantSource | 1 on noteOn, 0 on noteOff |
+| `pitch` | ConstantSource | Note frequency in Hz |
+| `follower:<nodeId>` | follower pipeline | `abs`+`slew` over the named node's output |
+
+---
+
+## `PluginOscillatorDef`
+
+```ts
+{
+  type:       OscillatorType | "noise",
+  detune:     number,        // cents
+  mix:        number,        // 0..1
+  fmTarget?:  string,        // v2: oscillator id to modulate
+  fmDepth?:   number,        // v2: FM modulation index in Hz
+}
+```
+
+`OscillatorType` is the Web Audio type: `"sine"` / `"square"` /
+`"sawtooth"` / `"triangle"`. `"noise"` selects the built-in noise
+generator whose colour is set by the instrument's top-level
+`noiseType`.
+
+---
+
+## `PluginSampleZone`
+
+```ts
+{
+  file:          string,
+  rootKey:       number,     // MIDI note at original pitch
+  keyRange:      { lo: number, hi: number },
+  velocityRange: { lo: number, hi: number },
+  loop:          boolean,
+  loopStart:     number,     // seconds
+  loopEnd:       number,     // seconds, 0 = end of buffer
+  startOffset:   number,     // seconds into buffer
+  duration:      number,     // max playback duration, 0 = play to end
+}
+```
+
+---
+
+## `PluginEnvelope`
+
+```ts
+{
+  attack:  number,    // seconds
+  decay:   number,    // seconds
+  sustain: number,    // 0..1
+  release: number,    // seconds
+}
+```
+
+---
+
+## `PluginEnvelopeDef` (v2, named envelopes)
+
+```ts
+{
+  id:     string,
+  stages: PluginEnvelopeStage[],
+  loop?:  boolean,
+}
+```
+
+### `PluginEnvelopeStage`
+
+```ts
+{
+  target: number,      // level (0..1 typical)
+  time:   number,      // seconds to reach target
+  curve?: "linear" | "exponential",
+}
+```
+
+---
+
+## `PluginFilterDef`
+
+```ts
+{
+  type:      BiquadFilterType,    // "lowpass" | "highpass" | "bandpass" | ...
+  frequency: number,
+  Q:         number,
+}
+```
+
+---
+
+## `PluginLfoDef` (v2)
+
+```ts
+{
+  id:     string,
+  shape:  "sine" | "triangle" | "square" | "sawtooth" | "sample-and-hold",
+  rate:   number,     // Hz
+  depth:  number,
+  sync?:  boolean,    // reserved for BPM sync
+}
+```
+
+---
+
+## `PluginUnisonDef` (v2)
+
+```ts
+{
+  count:        number,    // 1-8
+  detune:       number,    // cents spread
+  stereoSpread: number,    // 0-1
+}
+```
+
+---
+
+## `PluginPortamentoDef` (v2)
+
+```ts
+{
+  time: number,                    // seconds
+  mode: "always" | "legato",
+}
+```
+
+---
+
+## `PluginGraph` (v3)
+
+```ts
+{
+  nodes:       PluginDspNode[],
+  connections: PluginDspConnection[],
+  modRoutes?:  PluginModRoute[],
+}
+```
+
+Same shape as `PluginFxDsp` minus `processorName`. Used both inside
+`PluginInstrumentDsp.graph` and (conceptually) as the type the graph
+builder materialises from.
+
+Reserved stub nodes: `"voiceIn"` and `"voiceOut"` (per-voice) plus any
+`sharedNodes[]` the author declares.
+
+---
+
+## `PluginWorkletInstrumentDef` (v3)
+
+```ts
+{
+  processorName:        string,
+  numberOfInputs?:      number,
+  numberOfOutputs?:     number,
+  outputChannelCount?:  number[],
+  assets?:              string[],
+  initMessage?:         Record<string, unknown>,
+}
+```
+
+Narrative: [`../08-worklet-v3.md`](../08-worklet-v3.md)  
+Protocol: [`worklet-protocol.md`](worklet-protocol.md)
+
+---
+
+## `PluginWorkletParamDescriptor` (v3)
+
+```ts
+{
+  name:             string,
+  defaultValue?:    number,
+  minValue?:        number,
+  maxValue?:        number,
+  automationRate?:  "a-rate" | "k-rate",
+}
+```
+
+Advisory mirror of the processor's own `parameterDescriptors`. Used by
+the loader to validate that every declared parameter has a matching
+`<nodeId>.<paramName>` entry in `parameters[]`.
+
+---
+
+## `PluginUiDef`
+
+```ts
+{
+  layout:       "grid" | "flex",
+  controls:     PluginUiControl[],
+  accentColor?: string,      // v2
+  minWidth?:    number,      // v2
+  minHeight?:   number,      // v2
+}
+```
+
+---
+
+## `PluginUiControl`
+
+```ts
+{
+  type:         PluginControlType,
+  parameter?:   string,
+  label?:       string,
+  sampleIndex?: number,
+  // v2
+  parameterX?:  string,
+  parameterY?:  string,
+  analyserNode?: string,
+  options?:     string[],
+  children?:    PluginUiControl[],
+  style?:       "row" | "column",
+  width?:       number,
+  height?:      number,
+  // v3 webview
+  source?:              string,
+  aspectRatio?:         string,
+  sandbox?:             string,
+  forwardNotes?:        boolean,
+  forwardParams?:       boolean,
+  forwardEffects?:      boolean,
+  acceptsAudioFrames?:  boolean,
+  acceptsFocus?:        boolean,
+}
+```
+
+### `PluginControlType`
+
+| Type | v | Purpose |
+|---|---|---|
+| `knob` | — | Rotary dial |
+| `slider` | — | Horizontal fader |
+| `toggle` | — | On/off switch |
+| `select` | — | Dropdown |
+| `number` | — | Numeric input |
+| `waveform_view` | — | Canvas waveform (sample or live) |
+| `xy_pad` | v2 | 2D parameter control |
+| `envelope_editor` | v2 | ADSR breakpoint editor |
+| `meter` | v2 | Level bar from analyser |
+| `label` | v2 | Static text |
+| `group` | v2 | Nested container |
+| `webview` | v3 | Sandboxed iframe with postMessage bridge |
+
+### Field applicability
+
+| Field | Applies to |
+|---|---|
+| `parameter` | `knob`, `slider`, `toggle`, `select`, `number` |
+| `sampleIndex` | `waveform_view` (static mode) |
+| `parameterX`, `parameterY` | `xy_pad` |
+| `analyserNode` | `meter`, `waveform_view` (live mode) |
+| `options` | `select` |
+| `children`, `style` | `group` |
+| `width`, `height` | `waveform_view`, `meter`, `xy_pad`, `envelope_editor`, `webview` |
+| `source`, `aspectRatio`, `sandbox`, `forward*`, `accepts*` | `webview` |
+
+Narrative: [`../03-ui-controls.md`](../03-ui-controls.md),
+[`../09-webview.md`](../09-webview.md)
+
+---
+
+## Capability flags
+
+Declared in top-level `requires: string[]` (and optionally
+`dsp.requires: string[]` for instrument plugins).
+
+See [`host-capabilities.md`](host-capabilities.md) for the
+authoritative per-flag reference.
+
+---
+
+## Voice engine events
+
+Not part of `plugin.json` proper — these are the event shapes posted
+to webview iframes at runtime. See [`event-bus.md`](event-bus.md).
+
+---
+
+If a field is missing from this page or behaves differently than
+described, that's a spec bug — please file an issue.

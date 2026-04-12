@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 2,
+  "manifest": {
+    "name": "MY SAMPLER",
+    "version": "0.1.0",
+    "type": "instrument",
+    "author": "you",
+    "description": "Minimal sample-based instrument — replace samples/a440.wav with your own"
+  },
+  "parameters": [
+    { "key": "attack",  "label": "ATTACK",  "min": 0.001, "max": 2,  "default": 0.005, "step": 0.001, "unit": "s", "displayDecimals": 3 },
+    { "key": "decay",   "label": "DECAY",   "min": 0.01,  "max": 4,  "default": 0.2,   "step": 0.01,  "unit": "s", "displayDecimals": 2 },
+    { "key": "sustain", "label": "SUSTAIN", "min": 0,     "max": 1,  "default": 0.8,   "step": 0.01,               "displayDecimals": 2 },
+    { "key": "release", "label": "RELEASE", "min": 0.01,  "max": 4,  "default": 0.3,   "step": 0.01,  "unit": "s", "displayDecimals": 2 },
+    { "key": "cutoff",  "label": "CUTOFF",  "min": 100,   "max": 18000,"default": 8000,"step": 10,  "unit": "Hz", "displayDecimals": 0 },
+    { "key": "Q",       "label": "RESO",    "min": 0.1,   "max": 20, "default": 0.707, "step": 0.1,                "displayDecimals": 2 }
+  ],
+  "dsp": {
+    "processorName": null,
+    "voices": 8,
+    "voiceStealing": "oldest",
+    "oscillators": [],
+    "samples": [
+      {
+        "file": "samples/a440.wav",
+        "rootKey": 69,
+        "keyRange":      { "lo": 0,  "hi": 127 },
+        "velocityRange": { "lo": 0,  "hi": 127 },
+        "loop": false,
+        "loopStart": 0,
+        "loopEnd": 0,
+        "startOffset": 0,
+        "duration": 0
+      }
+    ],
+    "envelope": { "attack": 0.005, "decay": 0.2, "sustain": 0.8, "release": 0.3 },
+    "filter":   { "type": "lowpass", "frequency": 8000, "Q": 0.707 }
+  },
+  "ui": {
+    "layout": "flex",
+    "accentColor": "#ffaa00",
+    "controls": [
+      { "type": "group", "style": "row", "label": "ENV", "children": [
+        { "type": "knob", "parameter": "attack",  "label": "ATK" },
+        { "type": "knob", "parameter": "decay",   "label": "DEC" },
+        { "type": "knob", "parameter": "sustain", "label": "SUS" },
+        { "type": "knob", "parameter": "release", "label": "REL" }
+      ]},
+      { "type": "group", "style": "row", "label": "FILTER", "children": [
+        { "type": "knob", "parameter": "cutoff", "label": "CUT" },
+        { "type": "knob", "parameter": "Q",      "label": "RES" }
+      ]}
+    ]
+  }
+}

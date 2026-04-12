@@ -1,0 +1,115 @@
+<!doctype html>
+<!--
+  nanoTracker webview starter.
+
+  This file is your playground. It runs inside a sandboxed iframe
+  with a postMessage bridge to the tracker host. Every tracker event
+  dispatched on this instrument arrives here as a message.
+
+  Remember: single-file HTML only. The plugin loader rejects any
+  webview whose HTML references sibling assets (script files, CSS
+  files, ES module imports). Inline everything into this one file.
+  See plugin-sdk/docs/09-webview.md for the full rules.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>my webview</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #001008;
+    color: #00ffaa;
+    font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
+    font-size: 11px;
+    overflow: hidden;
+  }
+  #wrap { padding: 10px; box-sizing: border-box; height: 100%; }
+  h1 {
+    margin: 0 0 8px 0;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #008866;
+  }
+  #log {
+    border: 1px dashed #003322;
+    background: #000a06;
+    padding: 6px;
+    height: calc(100% - 40px);
+    overflow-y: auto;
+    white-space: pre-wrap;
+    line-height: 1.4;
+  }
+  .e-on   { color: #00ffaa; }
+  .e-off  { color: #005533; }
+  .e-par  { color: #ffaa00; }
+  .e-pit  { color: #00ccff; }
+  .e-gain { color: #ff6688; }
+  .e-all  { color: #ff3300; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1>webview bridge log — edit web/index.html</h1>
+  <div id="log"></div>
+</div>
+<script>
+(() => {
+  const log = document.getElementById("log");
+  let n = 0;
+
+  function append(cls, text) {
+    const div = document.createElement("div");
+    div.className = cls;
+    div.textContent = text;
+    log.appendChild(div);
+    while (log.childElementCount > 200) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
+    n++;
+  }
+
+  function fmt(ev) {
+    const t = (ev.time ?? 0).toFixed(3);
+    switch (ev.type) {
+      case "noteOn":      return `#${n.toString().padStart(4, "0")}  NOTE ON   ${ev.note}  v${ev.velocity}  t=${t}`;
+      case "noteOff":     return `#${n.toString().padStart(4, "0")}  NOTE OFF  ${ev.note}           t=${t}`;
+      case "param":       return `#${n.toString().padStart(4, "0")}  PARAM     ${ev.key} = ${ev.value}`;
+      case "pitch":       return `#${n.toString().padStart(4, "0")}  PITCH     ${ev.frequencyHz?.toFixed(2)} Hz`;
+      case "gain":        return `#${n.toString().padStart(4, "0")}  GAIN      ${ev.gain?.toFixed(3)}`;
+      case "allNotesOff": return `#${n.toString().padStart(4, "0")}  ALL OFF`;
+      default:            return `#${n.toString().padStart(4, "0")}  ${ev.type ?? "?"}`;
+    }
+  }
+
+  function cls(ev) {
+    switch (ev.type) {
+      case "noteOn":      return "e-on";
+      case "noteOff":     return "e-off";
+      case "param":       return "e-par";
+      case "pitch":       return "e-pit";
+      case "gain":        return "e-gain";
+      case "allNotesOff": return "e-all";
+      default:            return "";
+    }
+  }
+
+  // Install the listener BEFORE posting ready so queued events
+  // don't arrive before we're watching.
+  window.addEventListener("message", (e) => {
+    const ev = e.data;
+    if (!ev || typeof ev !== "object" || !ev.type) return;
+    append(cls(ev), fmt(ev));
+  });
+
+  // Handshake: flushes any queued events from the tracker host
+  // that arrived before the iframe finished loading.
+  window.parent.postMessage({ type: "__nt_ready" }, "*");
+
+  append("e-par", "webview loaded — waiting for tracker events…");
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# Node package managers
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Packed archives — build artifacts, not source
+*.ntins
+*.ntsfx

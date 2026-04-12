@@ -1,0 +1,407 @@
+<!doctype html>
+<!--
+  nt-doom — DOOM as a nanoTracker instrument plugin.
+
+  Hosts Jacob Enget's doom.wasm (GPL-2.0) inside a sandboxed iframe
+  and uses the nanoTracker host⇄iframe postMessage bridge to receive
+  voice-engine events (noteOn / noteOff / etc.) from tracker patterns
+  and translate them into reportKeyDown / reportKeyUp calls on the
+  Doom module. One pattern row = one controller tick. Holding a note
+  = holding a key.
+
+  This file is a TEMPLATE: the DOOM_WASM_B64_MARKER line below is
+  replaced with the base64-encoded doom.wasm binary by src/bundle.mjs
+  at build time.
+  The resulting `doom.html` is self-contained and can be dropped into
+  the plugin archive alongside plugin.json.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>nt-doom</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #000;
+    color: #ff6600;
+    font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
+    font-size: 10px;
+    overflow: hidden;
+  }
+  #wrap {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    max-width: 100%;
+    max-height: 100%;
+    outline: none;
+    background: #000;
+  }
+  #status {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    padding: 2px 6px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #ff6600;
+    font-size: 9px;
+    pointer-events: none;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    z-index: 2;
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.85);
+    color: #ff6600;
+    font-size: 11px;
+    text-align: center;
+    padding: 12px;
+    box-sizing: border-box;
+    line-height: 1.6;
+    z-index: 3;
+  }
+  #overlay.hidden { display: none; }
+  #overlay b { color: #ffb000; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="screen" tabindex="0"></canvas>
+  <div id="status">INIT</div>
+  <div id="overlay">
+    LOADING DOOM.WASM (4.35 MB)…<br>
+    <span id="overlay-msg">instantiating…</span>
+  </div>
+</div>
+
+<script>
+// The bundler replaces the marker line below with
+// `const DOOM_WASM_B64 = "...";` containing the base64-encoded
+// doom.wasm bytes inline. Must land BEFORE the main boot script so
+// the module-level boot() call can reference it synchronously.
+/*###DOOM_WASM_B64_MARKER###*/
+</script>
+
+<script>
+(() => {
+  "use strict";
+
+  const canvas  = document.getElementById("screen");
+  const ctx2d   = canvas.getContext("2d");
+  const statusEl  = document.getElementById("status");
+  const overlayEl = document.getElementById("overlay");
+  const overlayMsg = document.getElementById("overlay-msg");
+
+  let moduleMemory = null;
+  let scratchImageData = null;
+  let scratch32 = null;          // Uint32Array view onto scratchImageData.data
+  let doomExports = null;
+  let frameWidth = 0, frameHeight = 0;
+  let tickTimer = null;
+  let keyConstants = null;       // filled in after instantiate
+
+  function setStatus(s) { statusEl.textContent = s; }
+  function hideOverlay()  { overlayEl.classList.add("hidden"); }
+  function updateOverlay(msg) { overlayMsg.textContent = msg; }
+
+  // ── Host imports ────────────────────────────────────────────────────
+
+  function onGameInit(width, height) {
+    frameWidth  = width;
+    frameHeight = height;
+    canvas.width  = width;
+    canvas.height = height;
+    scratchImageData = ctx2d.createImageData(width, height);
+    // Alias the ImageData's byte buffer as a 32-bit view so we can do
+    // the BGRA→RGBA swap with a single bitwise shuffle per pixel
+    // instead of four byte writes. 4× faster than the reference loop
+    // in the Emscripten example and matters for filling a 320×200
+    // frame 35 times a second.
+    scratch32 = new Uint32Array(scratchImageData.data.buffer);
+    setStatus(`${width}×${height}`);
+  }
+
+  function drawFrame(framePtr) {
+    // Doom writes pixels as little-endian 0x00RRGGBB (because Doom
+    // treats them as ARGB but WASM is LE). The browser wants
+    // little-endian 0xAARRGGBB with alpha 0xFF. Swap R and B and OR
+    // in the alpha byte.
+    const src = new Uint32Array(moduleMemory.buffer, framePtr, frameWidth * frameHeight);
+    const dst = scratch32;
+    const n = src.length;
+    for (let i = 0; i < n; i++) {
+      const p = src[i];
+      // p in memory: BB GG RR 00  →  read as 0x00RRGGBB
+      // we want:     RR GG BB FF  →  0xFFBBGGRR
+      const r = (p >> 16) & 0xff;
+      const g = (p >>  8) & 0xff;
+      const b =  p        & 0xff;
+      dst[i] = (0xff << 24) | (b << 16) | (g << 8) | r;
+    }
+    ctx2d.putImageData(scratchImageData, 0, 0);
+  }
+
+  function timeInMilliseconds() {
+    return BigInt(Math.trunc(performance.now()));
+  }
+
+  function readUtf8(ptr, len) {
+    const bytes = new Uint8Array(moduleMemory.buffer, ptr, len);
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  }
+
+  function onInfoMessage(ptr, len)  { console.log(`[doom]  ${readUtf8(ptr, len)}`); }
+  function onErrorMessage(ptr, len) { console.warn(`[doom!] ${readUtf8(ptr, len)}`); }
+
+  const imports = {
+    loading: {
+      onGameInit,
+      wadSizes: () => {},          // falls through to built-in shareware WAD
+      readWads: () => {},
+    },
+    ui: {
+      drawFrame,
+    },
+    runtimeControl: {
+      timeInMilliseconds,
+    },
+    console: {
+      onInfoMessage,
+      onErrorMessage,
+    },
+    gameSaving: {
+      sizeOfSaveGame: () => 0,
+      readSaveGame:   () => 0,
+      writeSaveGame:  () => 0,
+    },
+  };
+
+  // ── Decode base64 WASM → ArrayBuffer ─────────────────────────────────
+
+  function base64ToBytes(b64) {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  // ── Tracker event → Doom key mapping ────────────────────────────────
+  //
+  // nanoTracker note numbers are MIDI (0–127). We bucket by note-mod-12
+  // inside "controller octaves" so the player can pick a comfortable
+  // octave and the mapping still holds.
+  //
+  //   PITCH CLASS         → DOOM KEY
+  //   C  (0)              → FORWARD
+  //   C# (1)              → STRAFE L
+  //   D  (2)              → BACKWARD
+  //   D# (3)              → STRAFE R
+  //   E  (4)              → TURN L
+  //   F  (5)              → TURN R
+  //   F# (6)              → FIRE
+  //   G  (7)              → USE
+  //   G# (8)              → ALT (run)
+  //   A  (9)              → SHIFT (run)
+  //   A# (10)             → ENTER
+  //   B  (11)             → ESCAPE
+  //
+  // Additional per-octave weapon selection on the top octave
+  // (note >= 96, i.e. C-7 and above): C=1, C#=2, D=3, … up to 8.
+  //
+  // The controller fires a key-down on noteOn and a key-up on
+  // noteOff. Because the tracker holds notes for their row duration,
+  // this Just Works as a gate signal — movement continues as long as
+  // the row is held.
+
+  function mapNoteToDoomKey(note) {
+    if (!keyConstants) return null;
+    if (note >= 96) {
+      // Weapon select: C-7 … D#-7 → '1' … '8'
+      const slot = (note - 96) + 1;
+      if (slot >= 1 && slot <= 9) return "1".charCodeAt(0) + (slot - 1);
+    }
+    const pc = ((note % 12) + 12) % 12;
+    switch (pc) {
+      case 0:  return keyConstants.KEY_UPARROW;     // FORWARD
+      case 1:  return keyConstants.KEY_STRAFE_L;    // C#
+      case 2:  return keyConstants.KEY_DOWNARROW;   // BACK
+      case 3:  return keyConstants.KEY_STRAFE_R;    // D#
+      case 4:  return keyConstants.KEY_LEFTARROW;   // E — TURN L
+      case 5:  return keyConstants.KEY_RIGHTARROW;  // F — TURN R
+      case 6:  return keyConstants.KEY_FIRE;        // F# — FIRE (Ctrl)
+      case 7:  return keyConstants.KEY_USE;         // G — USE (Space)
+      case 8:  return keyConstants.KEY_ALT;         // G#
+      case 9:  return keyConstants.KEY_SHIFT;       // A
+      case 10: return keyConstants.KEY_ENTER;       // A#
+      case 11: return keyConstants.KEY_ESCAPE;      // B
+    }
+    return null;
+  }
+
+  // Track which note is driving each doom key so two simultaneous
+  // notes mapping to the same key don't double-release on one noteOff.
+  // Map<doomKey, Set<note>>
+  const keyOwners = new Map();
+
+  function keyDown(doomKey, note) {
+    if (doomKey == null || !doomExports) return;
+    let owners = keyOwners.get(doomKey);
+    if (!owners) { owners = new Set(); keyOwners.set(doomKey, owners); }
+    const wasEmpty = owners.size === 0;
+    owners.add(note);
+    if (wasEmpty) doomExports.reportKeyDown(doomKey);
+  }
+
+  function keyUp(doomKey, note) {
+    if (doomKey == null || !doomExports) return;
+    const owners = keyOwners.get(doomKey);
+    if (!owners) return;
+    owners.delete(note);
+    if (owners.size === 0) doomExports.reportKeyUp(doomKey);
+  }
+
+  function releaseAll() {
+    if (!doomExports) return;
+    for (const [doomKey] of keyOwners) {
+      try { doomExports.reportKeyUp(doomKey); } catch { /* */ }
+    }
+    keyOwners.clear();
+  }
+
+  // ── Parent-frame message bridge ──────────────────────────────────────
+
+  window.addEventListener("message", (e) => {
+    const ev = e.data;
+    if (!ev || typeof ev !== "object") return;
+    switch (ev.type) {
+      case "noteOn": {
+        const k = mapNoteToDoomKey(ev.note);
+        if (k != null) keyDown(k, ev.note);
+        break;
+      }
+      case "noteOff": {
+        const k = mapNoteToDoomKey(ev.note);
+        if (k != null) keyUp(k, ev.note);
+        break;
+      }
+      case "allNotesOff":
+        releaseAll();
+        break;
+      // We ignore param / pitch / gain — Doom doesn't have continuous
+      // controls that map cleanly to knobs.
+    }
+  });
+
+  // Post ready AFTER the message listener is installed, so the host's
+  // flush doesn't miss-fire before we're listening.
+  window.parent.postMessage({ type: "__nt_ready" }, "*");
+
+  // Also forward DOM keyboard events when the iframe has focus — this
+  // lets the user click the canvas and play with a real keyboard for
+  // testing, independently of the tracker bridge.
+  const domToDoom = (key) => {
+    if (!keyConstants) return null;
+    switch (key) {
+      case "ArrowLeft":  return keyConstants.KEY_LEFTARROW;
+      case "ArrowRight": return keyConstants.KEY_RIGHTARROW;
+      case "ArrowUp":    return keyConstants.KEY_UPARROW;
+      case "ArrowDown":  return keyConstants.KEY_DOWNARROW;
+      case ",":          return keyConstants.KEY_STRAFE_L;
+      case ".":          return keyConstants.KEY_STRAFE_R;
+      case "Control":    return keyConstants.KEY_FIRE;
+      case " ":          return keyConstants.KEY_USE;
+      case "Shift":      return keyConstants.KEY_SHIFT;
+      case "Tab":        return keyConstants.KEY_TAB;
+      case "Escape":     return keyConstants.KEY_ESCAPE;
+      case "Enter":      return keyConstants.KEY_ENTER;
+      case "Backspace":  return keyConstants.KEY_BACKSPACE;
+      case "Alt":        return keyConstants.KEY_ALT;
+      default:
+        if (key.length === 1) return key.charCodeAt(0);
+        return null;
+    }
+  };
+  window.addEventListener("keydown", (e) => {
+    const k = domToDoom(e.key);
+    if (k != null && doomExports) {
+      doomExports.reportKeyDown(k);
+      e.preventDefault();
+    }
+  });
+  window.addEventListener("keyup", (e) => {
+    const k = domToDoom(e.key);
+    if (k != null && doomExports) {
+      doomExports.reportKeyUp(k);
+      e.preventDefault();
+    }
+  });
+
+  // ── Boot Doom ────────────────────────────────────────────────────────
+
+  async function boot() {
+    try {
+      updateOverlay("decoding wasm…");
+      // eslint-disable-next-line no-undef
+      const bytes = base64ToBytes(DOOM_WASM_B64);
+      updateOverlay("compiling wasm…");
+      const { instance } = await WebAssembly.instantiate(bytes, imports);
+      doomExports  = instance.exports;
+      moduleMemory = doomExports.memory;
+      keyConstants = {
+        KEY_LEFTARROW:  doomExports.KEY_LEFTARROW.value,
+        KEY_RIGHTARROW: doomExports.KEY_RIGHTARROW.value,
+        KEY_UPARROW:    doomExports.KEY_UPARROW.value,
+        KEY_DOWNARROW:  doomExports.KEY_DOWNARROW.value,
+        KEY_STRAFE_L:   doomExports.KEY_STRAFE_L.value,
+        KEY_STRAFE_R:   doomExports.KEY_STRAFE_R.value,
+        KEY_FIRE:       doomExports.KEY_FIRE.value,
+        KEY_USE:        doomExports.KEY_USE.value,
+        KEY_SHIFT:      doomExports.KEY_SHIFT.value,
+        KEY_TAB:        doomExports.KEY_TAB.value,
+        KEY_ESCAPE:     doomExports.KEY_ESCAPE.value,
+        KEY_ENTER:      doomExports.KEY_ENTER.value,
+        KEY_BACKSPACE:  doomExports.KEY_BACKSPACE.value,
+        KEY_ALT:        doomExports.KEY_ALT.value,
+      };
+      updateOverlay("initialising doom…");
+      doomExports.initGame();
+      hideOverlay();
+      setStatus("PLAY");
+      // Doom's native tick rate is 35 Hz — setInterval is "close
+      // enough" since the game's internal simulation clock is pulled
+      // from our timeInMilliseconds import anyway.
+      tickTimer = setInterval(() => {
+        try { doomExports.tickGame(); } catch (err) {
+          console.error("[nt-doom] tickGame threw:", err);
+          clearInterval(tickTimer);
+          setStatus("CRASHED");
+        }
+      }, 1000 / 35);
+    } catch (err) {
+      console.error("[nt-doom] boot failed:", err);
+      updateOverlay("boot failed — see console");
+      setStatus("FAIL");
+    }
+  }
+
+  boot();
+})();
+</script>
+
+</body>
+</html>
