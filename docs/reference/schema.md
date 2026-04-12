@@ -440,17 +440,29 @@ generator whose colour is set by the instrument's top-level
 
 ---
 
-## `PluginLfoDef` (v2)
+## `PluginLfoDef` (v2, extended v3.5)
 
 ```ts
 {
-  id:     string,
-  shape:  "sine" | "triangle" | "square" | "sawtooth" | "sample-and-hold",
-  rate:   number,     // Hz
-  depth:  number,
-  sync?:  boolean,    // reserved for BPM sync
+  id:        string,
+  shape:     "sine" | "triangle" | "square" | "sawtooth" | "sample-and-hold",
+  rate:      number,     // Hz (used when sync is false/absent)
+  depth:     number,
+  sync?:     boolean,    // v3.5: slave rate to host BPM
+  syncRate?: string,     // v3.5: musical division — "1/1" | "1/2" | "1/2." | "1/2T"
+                         //                         | "1/4" | "1/4." | "1/4T"
+                         //                         | "1/8" | "1/8." | "1/8T"
+                         //                         | "1/16" | "1/32"
+                         //                         | "<n>" for whole bars (4/4 assumed)
+                         //       Default "1/4".
 }
 ```
+
+When `sync` is true, `rate` (Hz) is ignored — the host computes
+cycles/second from the current BPM and `syncRate`. LFOs follow live BPM
+changes automatically. OscillatorNode shapes update phase-continuously;
+the `"sample-and-hold"` shape picks up the new rate within ~4s (its
+scheduling horizon).
 
 ---
 
@@ -536,13 +548,43 @@ the loader to validate that every declared parameter has a matching
 
 ```ts
 {
-  layout:       "grid" | "flex",
-  controls:     PluginUiControl[],
-  accentColor?: string,      // v2
-  minWidth?:    number,      // v2
-  minHeight?:   number,      // v2
+  layout:         "grid" | "flex",
+  controls:       PluginUiControl[],
+  accentColor?:   string,                // v2
+  minWidth?:      number,                // v2
+  minHeight?:     number,                // v2
+  themeOverride?: PluginThemeOverride,   // v3.5
 }
 ```
+
+### `PluginThemeOverride` (v3.5)
+
+```ts
+Partial<{
+  primary:       string,   // CSS colour — maps to --color-primary
+  primaryDim:    string,   //              --color-primary-dim
+  primaryGlow:   string,   //              --color-primary-glow
+  bg:            string,   //              --color-bg
+  bgElevated:    string,   //              --color-bg-elevated
+  text:          string,   //              --color-text
+  textDim:       string,   //              --color-text-dim
+  border:        string,   //              --color-border
+  scanline:      string,   //              --color-scanline
+  highlightBg:   string,   //              --color-highlight-bg
+  highlightText: string,   //              --color-highlight-text
+}>
+```
+
+Any subset of the 11 keys. Omitted keys fall through to the currently-
+active global theme via the CSS cascade — so a plugin that overrides
+only `primary` and `bg` keeps in sync with the user's chosen `text` /
+`border` / etc. when they switch themes.
+
+**Requires** the `"themeOverride"` capability in `requires[]`. The host
+loader throws at load time if the capability is missing. Webview iframes
+receive the resolved theme (globals merged with override) as a
+`themeChange` [`VoiceEngineEvent`](event-bus.md) on mount and on every
+global theme change.
 
 ---
 

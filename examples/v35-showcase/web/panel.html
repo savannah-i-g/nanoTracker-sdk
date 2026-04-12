@@ -1,0 +1,348 @@
+<!doctype html>
+<!--
+  v3.5 Showcase — webview panel
+
+  This single file exercises three v3.5 webview features in one place:
+
+    1. `themeChange`    — listens for the host's theme event, applies the
+                          11 resolved colours as CSS custom properties,
+                          and lets the rest of the stylesheet reskin via
+                          the cascade.
+    2. `trackerEffect`  — when `forwardEffects: true` is set in
+                          plugin.json, the host forwards raw MOD effect
+                          bytes on every row. We log the 8 most recent.
+    3. `acceptsAudioFrames` — every `noteOn` we receive produces a short
+                          decaying click, rendered as PCM Float32 and
+                          posted upstream via `__nt_audio`. The host
+                          routes it through this instrument's own bus,
+                          so it mixes with the granular output and
+                          responds to the channel vol/pan/FX.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  /* These are the CSS variables the host populates at mount time via
+     the `themeChange` event. Every value here is a fallback for the
+     brief moment before the first themeChange arrives — the colours
+     below are tuned for the plugin's default purple theme override so
+     the pre-event flash is subtle. */
+  :root {
+    --color-primary:        #c08cff;
+    --color-primary-dim:    #6a4a99;
+    --color-primary-glow:   rgba(192,140,255,0.18);
+    --color-bg:             #150820;
+    --color-bg-elevated:    #1e0d2c;
+    --color-text:           #e0d0ff;
+    --color-text-dim:       #8a78b0;
+    --color-border:         #442266;
+    --color-highlight-bg:   #c08cff;
+    --color-highlight-text: #150820;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 10px;
+    background: var(--color-bg);
+    color: var(--color-text);
+    overflow: hidden;
+    height: 100%;
+  }
+  .panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 8px;
+    box-sizing: border-box;
+    height: 100%;
+  }
+  .pane {
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-elevated);
+    padding: 4px 6px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .pane-title {
+    color: var(--color-text-dim);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-size: 8px;
+    margin-bottom: 4px;
+  }
+  .effects {
+    font-size: 9px;
+    line-height: 1.3;
+    flex: 1;
+    overflow: hidden;
+  }
+  .effects .row {
+    display: flex;
+    gap: 6px;
+  }
+  .effects .row span:first-child {
+    color: var(--color-primary);
+    min-width: 28px;
+  }
+  .scope {
+    flex: 1;
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .hint {
+    color: var(--color-text-dim);
+    font-style: italic;
+  }
+  .click-led {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-primary-dim);
+    vertical-align: middle;
+    margin-left: 4px;
+    transition: background-color 0.15s linear;
+  }
+  .click-led.lit {
+    background: var(--color-primary);
+    box-shadow: 0 0 8px var(--color-primary);
+  }
+</style>
+</head>
+<body>
+  <div class="panel">
+    <!-- Left pane: trackerEffect log + click LED -->
+    <div class="pane">
+      <div class="pane-title">
+        TRACKER EFFECTS
+        <span id="click-led" class="click-led" title="noteOn click indicator"></span>
+      </div>
+      <div id="effects" class="effects">
+        <div class="hint">No effects received yet.<br>
+        Place e.g. <b>4xy</b> (vibrato) or <b>7xy</b> (tremolo) on a<br>
+        channel routed to this instrument.</div>
+      </div>
+    </div>
+
+    <!-- Right pane: theme-coloured note-activity scope -->
+    <div class="pane">
+      <div class="pane-title">NOTE ACTIVITY</div>
+      <canvas id="scope" class="scope" width="240" height="110"></canvas>
+    </div>
+  </div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ── Ready handshake ──
+  //
+  // Tell the host we're alive so it flushes any queued events and
+  // delivers the audio-init message early. Without this, events sent
+  // before the iframe's `load` fires would be dropped.
+  parent.postMessage({ type: "__nt_ready" }, "*");
+
+  // ── State ──
+  const effectsEl = document.getElementById("effects");
+  const ledEl     = document.getElementById("click-led");
+  const canvas    = document.getElementById("scope");
+  const ctx2d     = canvas.getContext("2d");
+
+  const effectHistory = []; // [{code, value, time}, ...] — most recent first
+  const noteActivity  = []; // [{note, velocity, time}, ...] — rolling window
+  let sampleRate = 48000;
+
+  // ── Theme propagation ──
+  //
+  // The host posts `themeChange` with a fully-resolved 11-key palette at
+  // mount and on every global theme switch. We map camelCase keys to
+  // CSS custom-property names and apply them on the document root, so
+  // the stylesheet above reskins via the cascade.
+  function applyTheme(theme) {
+    if (!theme || typeof theme !== "object") return;
+    const root = document.documentElement;
+    for (const [k, v] of Object.entries(theme)) {
+      if (typeof v !== "string" || !v) continue;
+      const cssVar = "--color-" + k.replace(/[A-Z]/g, m => "-" + m.toLowerCase());
+      root.style.setProperty(cssVar, v);
+    }
+    // A canvas doesn't respond to CSS cascade — nudge a re-draw so the
+    // scope picks up the new strokes on the next frame.
+    requestAnimationFrame(drawScope);
+  }
+
+  // ── Effect logging ──
+  //
+  // We render the 8 most recent effects so a running pattern with a
+  // steady vibrato shows a scrolling stream rather than flooding the
+  // DOM. The `code` is the raw MOD effect nibble (0-F or 0xE_); we
+  // print it in hex alongside the value byte for readability.
+  function logEffect(code, value) {
+    effectHistory.unshift({ code, value, t: performance.now() });
+    if (effectHistory.length > 8) effectHistory.length = 8;
+    effectsEl.innerHTML = effectHistory.map(e => {
+      const codeHex  = e.code.toString(16).toUpperCase().padStart(2, "0");
+      const valueHex = e.value.toString(16).toUpperCase().padStart(2, "0");
+      return `<div class="row"><span>${codeHex}${valueHex}</span>` +
+             `<span>${effectName(e.code)}</span></div>`;
+    }).join("");
+  }
+
+  function effectName(code) {
+    // Lightweight MOD-effect cheatsheet for the most common nibbles.
+    // Extended effects (Exy) would need the value's high nibble to
+    // disambiguate; we just print the raw byte for those.
+    switch (code) {
+      case 0x0: return "arpeggio";
+      case 0x1: return "slide up";
+      case 0x2: return "slide down";
+      case 0x3: return "tone porta";
+      case 0x4: return "vibrato";
+      case 0x5: return "porta + vol slide";
+      case 0x6: return "vibrato + vol slide";
+      case 0x7: return "tremolo";
+      case 0x8: return "set panning";
+      case 0x9: return "sample offset";
+      case 0xA: return "volume slide";
+      case 0xB: return "position jump";
+      case 0xC: return "set volume";
+      case 0xD: return "pattern break";
+      case 0xE: return "extended (Exy)";
+      case 0xF: return "set speed/bpm";
+      default:  return "";
+    }
+  }
+
+  // ── Scope render loop ──
+  //
+  // Draws a decaying horizontal marker for each recent noteOn so the
+  // user can eyeball tracker activity. Uses the live
+  // `--color-primary` / `--color-bg` values read at render time so the
+  // scope follows theme swaps without us having to redraw from the
+  // themeChange handler (though we do, for snappiness).
+  function drawScope() {
+    const cs      = getComputedStyle(document.documentElement);
+    const primary = cs.getPropertyValue("--color-primary").trim() || "#c08cff";
+    const dim     = cs.getPropertyValue("--color-primary-dim").trim() || "#6a4a99";
+    const bg      = cs.getPropertyValue("--color-bg-elevated").trim() || "#1e0d2c";
+
+    const W = canvas.width;
+    const H = canvas.height;
+    ctx2d.fillStyle = bg;
+    ctx2d.fillRect(0, 0, W, H);
+
+    // Baseline + octave ticks — visual frame of reference
+    ctx2d.strokeStyle = dim;
+    ctx2d.lineWidth   = 1;
+    ctx2d.beginPath();
+    for (let n = 0; n <= 127; n += 12) {
+      const x = (n / 127) * W;
+      ctx2d.moveTo(x + 0.5, H - 1);
+      ctx2d.lineTo(x + 0.5, H - 6);
+    }
+    ctx2d.stroke();
+
+    // Draw each recent note as a vertical bar that fades over ~1.2s.
+    const now = performance.now();
+    ctx2d.strokeStyle = primary;
+    for (let i = noteActivity.length - 1; i >= 0; i--) {
+      const ev  = noteActivity[i];
+      const age = (now - ev.t) / 1200;
+      if (age >= 1) {
+        noteActivity.splice(i, 1);
+        continue;
+      }
+      const alpha = 1 - age;
+      const x     = (ev.note / 127) * W;
+      const h     = (ev.velocity / 127) * (H - 8);
+      ctx2d.globalAlpha = alpha;
+      ctx2d.lineWidth   = 2;
+      ctx2d.beginPath();
+      ctx2d.moveTo(x, H - 2);
+      ctx2d.lineTo(x, H - 2 - h);
+      ctx2d.stroke();
+    }
+    ctx2d.globalAlpha = 1;
+  }
+
+  // Steady 30 Hz repaint so decays are smooth. A rAF-driven loop would
+  // work too; setInterval keeps the redraw cheap while the iframe is
+  // idle.
+  setInterval(drawScope, 33);
+
+  // ── noteOn click (PCM route-back) ──
+  //
+  // Render a short exponentially-decaying click in Float32, posted up
+  // as an `__nt_audio` message. The host routes it through this
+  // instrument's own bus so it mixes with the granular synth output.
+  // 40 ms at the host's sample rate (~1920 samples at 48k) is long
+  // enough to hear without overstaying its welcome.
+  function postClick(velocity) {
+    const dur = 0.04;
+    const N   = Math.round(sampleRate * dur);
+    const buf = new Float32Array(N);
+    const freq = 2400;
+    const vel  = Math.max(0.05, Math.min(1, velocity / 127));
+    for (let i = 0; i < N; i++) {
+      const t = i / sampleRate;
+      // Fast exp decay × a square-ish "tick" component
+      const env  = Math.exp(-t * 70);
+      const tone = Math.sin(2 * Math.PI * freq * t)
+                 + 0.4 * Math.sin(2 * Math.PI * freq * 2 * t);
+      buf[i] = 0.35 * vel * env * tone;
+    }
+    parent.postMessage({ type: "__nt_audio", left: buf }, "*");
+
+    // Visual heartbeat
+    ledEl.classList.add("lit");
+    setTimeout(() => ledEl.classList.remove("lit"), 120);
+  }
+
+  // ── Message handler ──
+  window.addEventListener("message", (e) => {
+    const ev = e.data;
+    if (!ev || typeof ev !== "object") return;
+
+    switch (ev.type) {
+      case "__nt_audioInit":
+        // Host-authoritative sample rate. Update for any future
+        // click-render so the click's pitch is independent of the
+        // host's actual rate (44.1 / 48 / 88.2 / 96 kHz etc.).
+        if (typeof ev.sampleRate === "number" && ev.sampleRate > 0) {
+          sampleRate = ev.sampleRate;
+        }
+        break;
+
+      case "themeChange":
+        applyTheme(ev.theme);
+        break;
+
+      case "noteOn":
+        noteActivity.push({
+          note: ev.note ?? 60,
+          velocity: ev.velocity ?? 100,
+          t: performance.now(),
+        });
+        if (noteActivity.length > 64) noteActivity.shift();
+        postClick(ev.velocity ?? 100);
+        break;
+
+      case "trackerEffect":
+        logEffect(ev.effectCode | 0, ev.value | 0);
+        break;
+
+      // noteOff / allNotesOff / pitch / gain / param fall through
+      // silently — the scope naturally fades on its own, and we don't
+      // need to mirror voice engine state here.
+      default:
+        break;
+    }
+  });
+})();
+</script>
+</body>
+</html>

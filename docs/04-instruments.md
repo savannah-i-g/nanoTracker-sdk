@@ -275,9 +275,10 @@ two simultaneous notes have independent, un-synced LFOs).
 |---|---|
 | `id` | unique id used as a modulation source in `modRoutes` |
 | `shape` | `"sine"\|"triangle"\|"square"\|"sawtooth"\|"sample-and-hold"` |
-| `rate` | frequency in Hz |
+| `rate` | frequency in Hz (used when `sync` is false/absent) |
 | `depth` | output amplitude (0–1 typical) |
-| `sync` | reserved for future BPM sync |
+| `sync` | *(v3.5)* set `true` to slave the LFO rate to host BPM |
+| `syncRate` | *(v3.5)* when `sync` is true, the musical division: `"1/1"`, `"1/2"`, `"1/2."` (dotted), `"1/2T"` (triplet), `"1/4"`, `"1/8"`, `"1/16"`, `"1/32"`, or a whole-number of bars like `"2"` or `"4"`. Default `"1/4"`. |
 
 LFOs on their own do nothing — you route them to a parameter via
 `modRoutes[]`:

@@ -219,6 +219,35 @@ export async function preflightPlugin(pluginJson, sourceDir) {
     }
   }
 
+  // ── themeOverride (v3.5) ───────────────────────────────────
+  // Validate shape + require the capability flag. Unknown keys are
+  // pointed at so typos don't silently vanish at load time.
+  const THEME_OVERRIDE_KEYS = new Set([
+    "primary", "primaryDim", "primaryGlow",
+    "bg", "bgElevated",
+    "text", "textDim",
+    "border", "scanline",
+    "highlightBg", "highlightText",
+  ]);
+  const themeOverride = pluginJson.ui && pluginJson.ui.themeOverride;
+  if (themeOverride !== undefined && themeOverride !== null) {
+    if (typeof themeOverride !== "object" || Array.isArray(themeOverride)) {
+      issues.push(`ui.themeOverride must be an object (got ${Array.isArray(themeOverride) ? "array" : typeof themeOverride})`);
+    } else {
+      for (const [k, v] of Object.entries(themeOverride)) {
+        if (!THEME_OVERRIDE_KEYS.has(k)) {
+          issues.push(`ui.themeOverride: unknown key "${k}" — expected one of ${[...THEME_OVERRIDE_KEYS].join(", ")}`);
+        } else if (typeof v !== "string" || !v.trim()) {
+          issues.push(`ui.themeOverride.${k}: must be a non-empty CSS colour string`);
+        }
+      }
+      const req = Array.isArray(pluginJson.requires) ? pluginJson.requires : [];
+      if (!req.includes("themeOverride")) {
+        issues.push(`ui.themeOverride is set but "themeOverride" is missing from requires[] — add it or drop the override`);
+      }
+    }
+  }
+
   // ── requires[] capability sanity ───────────────────────────
   // The set below is the current nanoTracker host capability list.
   // When a new flag ships, update this set and docs/reference/host-capabilities.md.
@@ -230,6 +259,7 @@ export async function preflightPlugin(pluginJson, sourceDir) {
     "modMatrix-v3",
     "trackerEffects-v3",
     "webview-ui",
+    "themeOverride",
   ]);
   if (Array.isArray(pluginJson.requires)) {
     for (const cap of pluginJson.requires) {

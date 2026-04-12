@@ -36,9 +36,65 @@ The panel renders left-to-right or top-to-bottom depending on
 |---|---|---|
 | `layout` | `"flex"` | `"flex"` or `"grid"`. Controls the outer container's flex direction. |
 | `controls` | required | Array of `PluginUiControl`. |
-| `accentColor` | CSS var | CSS colour string used for knob indicators, label highlights, etc. |
+| `accentColor` | CSS var | CSS colour string used for knob indicators, label highlights, etc. (v2) |
 | `minWidth` | — | Minimum panel width in pixels. |
 | `minHeight` | — | Minimum panel height in pixels. |
+| `themeOverride` | — | *(v3.5)* Partial theme-colour override for the whole InstrumentWindow. See below. |
+
+### `themeOverride` (v3.5)
+
+`themeOverride` takes any subset of the 11 colour keys used by the
+host's theme system and scopes them to the plugin's InstrumentWindow:
+
+```json
+"ui": {
+  "layout": "flex",
+  "themeOverride": {
+    "primary":     "#ff7a00",
+    "primaryDim":  "#7a3a00",
+    "bg":          "#140800",
+    "bgElevated":  "#1d1005",
+    "text":        "#ffddbb",
+    "border":      "#552200"
+  },
+  "controls": [ /* ... */ ]
+}
+```
+
+Omitted keys fall through to the active global theme via the CSS
+cascade — so a plugin that only overrides `primary` and `bg` keeps
+`text`/`border`/etc. in sync with the user's chosen palette when they
+switch themes.
+
+Scope:
+
+- **Chrome** (title bar, borders, jacks, resize handle) and all
+  built-in controls (knob, slider, toggle, etc.) recolour.
+- **Webview** iframes receive the resolved palette as a `themeChange`
+  [`VoiceEngineEvent`](reference/event-bus.md#themechange-v35) on
+  mount and on every global theme change.
+- **Other windows** are unaffected — overrides are scoped to this
+  plugin's InstrumentWindow.
+
+**Requires** the `"themeOverride"` capability in `requires[]`. The
+host loader throws a load-time error if the flag is missing; the
+`ntvalidate` pre-flight catches it earlier.
+
+All 11 keys, for reference:
+
+| Key | CSS variable | Typical use |
+|---|---|---|
+| `primary` | `--color-primary` | Knob indicators, accent text, active states |
+| `primaryDim` | `--color-primary-dim` | Hover / pressed accent variants |
+| `primaryGlow` | `--color-primary-glow` | `rgba(...)` soft glow behind accents |
+| `bg` | `--color-bg` | Window body background |
+| `bgElevated` | `--color-bg-elevated` | Panel / popover backgrounds |
+| `text` | `--color-text` | Body text |
+| `textDim` | `--color-text-dim` | Labels, secondary text |
+| `border` | `--color-border` | Window / control borders |
+| `scanline` | `--color-scanline` | `rgba(...)` CRT scanline tint |
+| `highlightBg` | `--color-highlight-bg` | Selection / focus backgrounds |
+| `highlightText` | `--color-highlight-text` | Selection / focus text colour |
 
 ## Control types
 

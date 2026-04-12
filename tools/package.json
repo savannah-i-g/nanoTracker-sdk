@@ -1,6 +1,6 @@
 {
   "name": "nanotracker-plugin-sdk-tools",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "CLIs for packaging and validating nanoTracker plugin archives",
   "private": true,
   "type": "module",

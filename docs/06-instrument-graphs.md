@@ -249,15 +249,39 @@ Granular resynthesis of a sample file. The sample is decoded once at
 load time; the worklet generates overlapping grains from it at
 positions driven by modulation.
 
+`playbackMode` (default `"forward"`) controls how grains traverse the
+source buffer:
+
+| Mode | Behaviour |
+|---|---|
+| `"forward"` | Grains play at the natural forward rate. |
+| `"reverse"` | Grains play backwards through the source. |
+| `"pingpong"` | Each spawned grain independently picks forward or reverse (50/50). Produces a characteristic chorus-like texture without a shared phase state. |
+| `"freeze"` | Ignores `scanRate` and position drift — grains freeze at whatever `position` reads at spawn. Jitter still applies, giving a "frozen cloud" sound. |
+
+`grainEnvelope` (default `"hann"`) controls the per-grain window shape:
+`"hann"` (clean tonal grains), `"triangle"` (cheap, crunchy), or
+`"rectangular"` (no window — only use when you really mean it).
+
 **Automatable parameters** (exposed as `<nodeId>.<paramName>`):
 
-| Param | Purpose |
-|---|---|
-| `grainRate` | Grains per second |
-| `grainDur` | Grain duration in seconds |
-| `position` | Playback position (0..1 through the sample) |
-| `spread` | Random position jitter |
-| `pitch` | Pitch shift in semitones (independent of position) |
+| Param | Range | Purpose |
+|---|---|---|
+| `position` | 0..1 | Source playhead, normalised over the sample. |
+| `density` | 0.1..200 | Grains per second. |
+| `grainSize` | 0.005..1.0 | Per-grain duration in seconds. |
+| `pitch` | -48..48 | Semitone offset applied to each grain's playback rate (independent of position). |
+| `scanRate` | -10..10 | Auto-scan rate over the source, in cycles per second. `0` holds the playhead. Ignored in `freeze` mode. |
+| `pan` | -1..+1 | Base stereo pan position (equal-power). |
+| `gate` | 0..1 | Spawn enable. Below 0.5, no new grains spawn; already-live grains age out naturally (soft release tail). |
+| `positionJitter` | 0..1 | Random spread applied to `position` at spawn. |
+| `pitchJitter` | 0..200 | Cents of random pitch spread per grain. |
+| `sizeJitter` | 0..1 | Multiplicative randomisation of `grainSize`. |
+| `panJitter` | 0..1 | Random pan spread around the base `pan`. |
+
+Internally the grain pool is capped at 128 active grains; at high
+density settings new grains are dropped (never allocated) rather than
+stealing — audible as a density ceiling, not a glitch.
 
 Requires `"granular"` in `requires[]`.
 
@@ -280,11 +304,16 @@ file. `interpolation` controls intra-frame smoothing:
 
 **Automatable parameters**:
 
-| Param | Purpose |
-|---|---|
-| `frame` | Current frame position (0..frameCount-1) |
-| `frequency` | Oscillator frequency in Hz |
-| `detune` | Cents offset |
+| Param | Range | Purpose |
+|---|---|---|
+| `frequency` | 0..20000 Hz | Oscillator frequency. When your graph feeds the voice's `pitch` ConstantSource into this param, you get note-tracking for free. |
+| `framePosition` | 0..1 | Interpolated position through the table. `0` = first frame, `1` = last frame. The processor blends linearly between adjacent frames. |
+| `detune` | -1200..+1200 cents | Fine-tune on top of `frequency`. |
+| `gain` | 0..1 | Output level. |
+
+**Note on `framePosition`:** the parameter is normalised to `0..1` —
+not `0..frameCount-1`. Scale your LFOs / envelopes accordingly. Output
+is always stereo (mono table replicated to both channels).
 
 Requires `"wavetable"` in `requires[]`.
 

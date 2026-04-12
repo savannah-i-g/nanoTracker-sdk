@@ -11,6 +11,51 @@ history, see `git log` in the main repo.
 
 ---
 
+## v3.5 — QoL pass: theme overrides + finish reserved features (2026-04)
+
+A maintenance pass that cashes in four features previously reserved-for-v2,
+reconciles the granular/wavetable param docs with the shipped worklets,
+and adds the headline feature: per-plugin window theme overrides.
+
+**New:**
+
+- `ui.themeOverride` manifest field — partial override map (subset of the
+  11 theme colour keys: `primary`, `primaryDim`, `primaryGlow`, `bg`,
+  `bgElevated`, `text`, `textDim`, `border`, `scanline`, `highlightBg`,
+  `highlightText`) applied as scoped CSS vars on the plugin's
+  InstrumentWindow. Webview iframes receive the resolved theme via a new
+  `themeChange` VoiceEngineEvent, re-posted whenever the global theme
+  changes.
+- Capability flag: `"themeOverride"`.
+- `VoiceEngineEvent` union gains `themeChange` and `trackerEffect`
+  variants.
+
+**Finished features previously reserved-for-v2:**
+
+- `forwardEffects: true` on webview controls now works — raw MOD
+  effect-column bytes are forwarded to the iframe as
+  `{ type: "trackerEffect", effectCode, value, time }` events.
+- `acceptsAudioFrames: true` on webview controls now works — PCM audio
+  posted from the iframe via `{ type: "__nt_audio", left, right? }` is
+  routed through a host-side AudioWorklet sink into the instrument's
+  output chain (so channel volume / pan / FX apply). Host sends
+  `{ type: "__nt_audioInit", sampleRate }` at mount.
+- LFO `sync: true` + `syncRate: "1/4"` (etc.) now actually follows host
+  BPM.
+- Granular `playbackMode: "pingpong"` and `"freeze"` now actually work —
+  previously both silently fell through to `"forward"`.
+
+**Documentation reconciled with code:**
+
+- `06-instrument-graphs.md` granular/wavetable param tables now match
+  the shipped worklets. Previously-documented names (`grainRate`,
+  `grainDur`, `spread`, `frame`) never existed in code; actual params
+  (`density`, `grainSize`, `scanRate`, `pan`, the four `*Jitter` knobs,
+  `framePosition` in 0..1, `gain`) are now documented.
+- `playbackMode` enum explicitly lists all four supported values.
+
+**No breaking changes.** All existing plugins load unchanged.
+
 ## v3.4 — webview UI control (2026-04)
 
 Added the `webview` UI control type and the host↔iframe `postMessage`

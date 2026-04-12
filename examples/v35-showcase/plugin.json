@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 3,
+  "requires": ["graph", "granular", "webview-ui", "themeOverride"],
+  "manifest": {
+    "name": "V35 Showcase",
+    "version": "1.0.0",
+    "type": "instrument",
+    "author": "nanoTracker SDK",
+    "description": "Exercises every v3.5 feature in one plugin. Granular synth in PINGPONG mode with a BPM-synced LFO modulating grain position; webview overlay that receives themeChange, logs trackerEffect bytes, and posts a noteOn click back as PCM audio; deep-purple themeOverride so the scoped colour palette is visually obvious against any global theme."
+  },
+
+  "parameters": [
+    { "key": "gr.position",       "label": "POSN",  "min": 0,    "max": 1,   "default": 0.25, "step": 0.001, "unit": "",   "displayDecimals": 3 },
+    { "key": "gr.density",        "label": "DENS",  "min": 1,    "max": 200, "default": 30,   "step": 0.1,   "unit": "/s", "displayDecimals": 1 },
+    { "key": "gr.grainSize",      "label": "GRAIN", "min": 0.005,"max": 1,   "default": 0.18, "step": 0.001, "unit": "s",  "displayDecimals": 3 },
+    { "key": "gr.pitch",          "label": "TUNE",  "min": -24,  "max": 24,  "default": 0,    "step": 1,     "unit": "st", "displayDecimals": 0 },
+    { "key": "gr.positionJitter", "label": "P.JIT", "min": 0,    "max": 1,   "default": 0.05, "step": 0.01,  "unit": "",   "displayDecimals": 2 },
+    { "key": "gr.pitchJitter",    "label": "T.JIT", "min": 0,    "max": 200, "default": 8,    "step": 1,     "unit": "ct", "displayDecimals": 0 },
+    { "key": "gr.panJitter",      "label": "PAN",   "min": 0,    "max": 1,   "default": 0.55, "step": 0.01,  "unit": "",   "displayDecimals": 2 },
+
+    { "key": "lfoDepth.gain",     "label": "LFO",   "min": 0,    "max": 1,   "default": 0.20, "step": 0.01,  "unit": "",   "displayDecimals": 2 },
+
+    { "key": "ampGain.gain",      "label": "VOL",   "min": 0,    "max": 1,   "default": 0.55, "step": 0.01,  "unit": "",   "displayDecimals": 2 }
+  ],
+
+  "dsp": {
+    "voices": 4,
+    "voiceStealing": "oldest",
+    "graph": {
+      "nodes": [
+        {
+          "id": "gr", "type": "granular", "scope": "voice",
+          "sampleFile": "samples/texture.wav",
+          "playbackMode": "pingpong",
+          "grainEnvelope": "hann"
+        },
+        {
+          "id": "posLfo", "type": "lfo", "scope": "voice",
+          "lfoShape": "sine",
+          "lfoDepth": 0.20,
+          "lfoSync": true,
+          "lfoSyncRate": "1/4"
+        },
+        {
+          "id": "lfoDepth", "type": "gain", "scope": "voice", "gain": 0.20
+        },
+        {
+          "id": "voiceGain", "type": "gain", "scope": "voice", "gain": 0
+        },
+        {
+          "id": "ampEnv", "type": "envelope", "scope": "voice",
+          "envStages": [
+            { "target": 1.0, "time": 0.06, "curve": "linear" },
+            { "target": 0.9, "time": 0.30, "curve": "linear" },
+            { "target": 0.9, "time": 6.0,  "curve": "linear" }
+          ]
+        },
+        {
+          "id": "ampGain", "type": "gain", "scope": "shared", "gain": 0.55
+        }
+      ],
+      "connections": [
+        { "from": "gate",      "to": "gr",        "toParam": "gate" },
+
+        { "from": "posLfo",    "to": "lfoDepth" },
+        { "from": "lfoDepth",  "to": "gr",        "toParam": "position" },
+
+        { "from": "gr",        "to": "voiceGain" },
+        { "from": "ampEnv",    "to": "voiceGain", "toParam": "gain" },
+
+        { "from": "voiceGain", "to": "voiceOut" },
+        { "from": "voiceSum",  "to": "ampGain" },
+        { "from": "ampGain",   "to": "output" }
+      ]
+    }
+  },
+
+  "presets": [
+    { "name": "DEFAULT", "values": { "gr.position": 0.25, "gr.density": 30,  "gr.grainSize": 0.18, "gr.pitch":  0, "gr.positionJitter": 0.05, "gr.pitchJitter":  8, "gr.panJitter": 0.55, "lfoDepth.gain": 0.20, "ampGain.gain": 0.55 } },
+    { "name": "WIDE",    "values": { "gr.position": 0.40, "gr.density": 45,  "gr.grainSize": 0.25, "gr.pitch":  0, "gr.positionJitter": 0.15, "gr.pitchJitter": 15, "gr.panJitter": 0.90, "lfoDepth.gain": 0.35, "ampGain.gain": 0.55 } },
+    { "name": "STATIC",  "values": { "gr.position": 0.10, "gr.density": 80,  "gr.grainSize": 0.06, "gr.pitch":  0, "gr.positionJitter": 0.00, "gr.pitchJitter":  0, "gr.panJitter": 0.20, "lfoDepth.gain": 0.00, "ampGain.gain": 0.55 } },
+    { "name": "DEEPLFO", "values": { "gr.position": 0.50, "gr.density": 25,  "gr.grainSize": 0.20, "gr.pitch":-12, "gr.positionJitter": 0.10, "gr.pitchJitter": 10, "gr.panJitter": 0.60, "lfoDepth.gain": 0.80, "ampGain.gain": 0.55 } }
+  ],
+
+  "ui": {
+    "layout": "flex",
+    "minWidth": 560,
+    "themeOverride": {
+      "primary":       "#c08cff",
+      "primaryDim":    "#6a4a99",
+      "primaryGlow":   "rgba(192,140,255,0.18)",
+      "bg":            "#150820",
+      "bgElevated":    "#1e0d2c",
+      "text":          "#e0d0ff",
+      "textDim":       "#8a78b0",
+      "border":        "#442266",
+      "scanline":      "rgba(192,140,255,0.05)",
+      "highlightBg":   "#c08cff",
+      "highlightText": "#150820"
+    },
+    "controls": [
+      { "type": "label", "label": "V3.5 SHOWCASE  —  GRAIN + LFO SYNC + THEMED WEBVIEW" },
+      {
+        "type": "webview",
+        "source": "web/panel.html",
+        "height": 150,
+        "forwardNotes": true,
+        "forwardParams": false,
+        "forwardEffects": true,
+        "acceptsAudioFrames": true
+      },
+      { "type": "group", "style": "row", "children": [
+        { "type": "knob", "parameter": "gr.position",       "label": "POSN"  },
+        { "type": "knob", "parameter": "gr.density",        "label": "DENS"  },
+        { "type": "knob", "parameter": "gr.grainSize",      "label": "GRAIN" },
+        { "type": "knob", "parameter": "gr.pitch",          "label": "TUNE"  },
+        { "type": "knob", "parameter": "gr.positionJitter", "label": "P.JIT" },
+        { "type": "knob", "parameter": "gr.pitchJitter",    "label": "T.JIT" },
+        { "type": "knob", "parameter": "gr.panJitter",      "label": "PAN"   },
+        { "type": "knob", "parameter": "lfoDepth.gain",     "label": "LFO ¼" },
+        { "type": "knob", "parameter": "ampGain.gain",      "label": "VOL"   }
+      ]}
+    ]
+  }
+}

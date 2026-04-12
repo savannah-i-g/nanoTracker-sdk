@@ -83,8 +83,8 @@ Every tracker event lands in the iframe's log.
 | `sandbox` | `""` | extra sandbox tokens appended to the default `allow-scripts allow-same-origin` |
 | `forwardNotes` | `true` | forward `noteOn` / `noteOff` / `allNotesOff` / `pitch` / `gain` events |
 | `forwardParams` | `true` | forward `param` events when knobs/sliders change |
-| `forwardEffects` | `false` | (reserved for v2) forward raw MOD effect bytes |
-| `acceptsAudioFrames` | `false` | (reserved for v2) enable PCM route-back into tracker master bus |
+| `forwardEffects` | `false` | *(v3.5)* forward `trackerEffect` events (raw MOD effect-column bytes). See [`reference/event-bus.md`](reference/event-bus.md#trackereffect-v35). |
+| `acceptsAudioFrames` | `false` | *(v3.5)* route PCM audio posted from the iframe back into the host's per-instrument output chain. See [`12-webview-audio.md`](12-webview-audio.md). |
 | `acceptsFocus` | `true` | when `false`, disables pointer events on the iframe so the tracker keeps keyboard focus even while the cursor is over it |
 
 Only `source` is required. Everything else has sensible defaults.
@@ -124,12 +124,14 @@ window.addEventListener("message", (e) => {
   const ev = e.data;
   if (!ev || typeof ev !== "object") return;
   switch (ev.type) {
-    case "noteOn":      /* ev.note, ev.velocity, ev.time */ break;
-    case "noteOff":     /* ev.note, ev.time */ break;
-    case "allNotesOff": /* ev.time */ break;
-    case "pitch":       /* ev.frequencyHz, ev.time */ break;
-    case "gain":        /* ev.gain, ev.time */ break;
-    case "param":       /* ev.key, ev.value */ break;
+    case "noteOn":        /* ev.note, ev.velocity, ev.time */ break;
+    case "noteOff":       /* ev.note, ev.time */ break;
+    case "allNotesOff":   /* ev.time */ break;
+    case "pitch":         /* ev.frequencyHz, ev.time */ break;
+    case "gain":          /* ev.gain, ev.time */ break;
+    case "param":         /* ev.key, ev.value */ break;
+    case "trackerEffect": /* ev.effectCode, ev.value, ev.time (v3.5) */ break;
+    case "themeChange":   /* ev.theme (v3.5 — ThemeColorSet) */ break;
   }
 });
 ```
@@ -143,21 +145,45 @@ seconds. If you want sample-accurate scheduling, translate with
 `performance.now()` and your own drift compensation. For most use
 cases, treat it as "roughly now".
 
-**Filtering:** the `forwardNotes` / `forwardParams` flags on the control
-decide which events reach the iframe. If you only care about parameter
-automation (e.g., a knob visualizer), set `forwardNotes: false` to save
-postMessage bandwidth.
+**Filtering:** the `forwardNotes` / `forwardParams` / `forwardEffects`
+flags on the control decide which event classes reach the iframe.
+`themeChange` is always delivered (low frequency — mount + theme
+swaps). If you only care about parameter automation (e.g., a knob
+visualizer), set `forwardNotes: false` to save postMessage bandwidth.
+
+### Picking up theme colours inside the iframe (v3.5)
+
+The host posts a `themeChange` event shortly after the ready handshake
+with a fully-resolved 11-key `ThemeColorSet`. A tiny handler is enough
+to make your iframe follow the tracker's theme:
+
+```js
+case "themeChange":
+  for (const [k, v] of Object.entries(ev.theme)) {
+    // camelCase → kebab-case: "primaryDim" → "--color-primary-dim"
+    const cssVar = "--color-" + k.replace(/[A-Z]/g, m => "-" + m.toLowerCase());
+    document.documentElement.style.setProperty(cssVar, v);
+  }
+  break;
+```
+
+Now your stylesheet can use `var(--color-primary)` / `var(--color-bg)`
+and your iframe stays in sync with theme changes (including per-plugin
+`ui.themeOverride` — the resolved values arrive pre-merged).
 
 ### What the iframe can post back
 
-Whatever you want. The host accepts messages back from the iframe
-over the same channel, but v1 does not expose a two-way API to
-plugin authors — iframe-to-host messages are effectively *ignored*
-in v1 and reserved for future use.
+The host recognises two iframe-originated message types:
 
-The one exception is the ready handshake:
-`{ type: "__nt_ready" }` is recognised by the host and flushes the
-event queue.
+- `{ type: "__nt_ready" }` — **ready handshake.** Flushes the queued
+  event stream early (otherwise the host waits for the iframe's
+  `load` event). Always send this as the first line of your script.
+- `{ type: "__nt_audio", left, right?, sampleRate? }` — **v3.5 PCM
+  route-back.** Only active when the control declares
+  `acceptsAudioFrames: true`. Sends audio frames upstream into the
+  tracker's output chain. See [`12-webview-audio.md`](12-webview-audio.md).
+
+Other iframe-to-host messages are ignored in v3.5.
 
 ---
 
@@ -364,13 +390,14 @@ without the second, the inlined `<script>` tags inside the iframe
 are silently blocked because `blob:` iframes with `allow-same-origin`
 inherit the parent's CSP.
 
-**No audio through tracker bus in v1.** If your webview plugin makes
-sound, it plays through the iframe's own `AudioContext` — not the
-tracker master bus. You can't run a dub delay FX plugin on your
-webview's audio output yet. The `acceptsAudioFrames` field is reserved
-for a future v2 that adds PCM route-back, but v1 ignores it. If the
-gag of your plugin depends on the audio mixing with the tracker, this
-is not the feature for you yet.
+**Audio through tracker bus is opt-in (v3.5).** By default a webview
+plugin's audio plays through the iframe's own `AudioContext`, not the
+tracker's bus — set `acceptsAudioFrames: true` on the webview control
+and post `{ type: "__nt_audio", left, right? }` messages up to the
+host to route PCM into the instrument's output chain. Channel volume,
+pan, and FX then apply the same way as any other plugin. See
+[`12-webview-audio.md`](12-webview-audio.md) for the protocol and a
+worked example.
 
 **5 MB is fine, 50 MB is asking for trouble.** Browsers handle large
 base64 blobs, but the tracker loads the whole archive into memory when

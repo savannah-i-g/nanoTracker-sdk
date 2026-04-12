@@ -10,12 +10,15 @@ webview authors can write type-safe handlers.
 
 ```typescript
 export type VoiceEngineEvent =
-  | { type: "noteOn";      note: number; velocity: number; time: number }
-  | { type: "noteOff";     note: number; time: number }
-  | { type: "param";       key: string;  value: number }
-  | { type: "pitch";       frequencyHz: number; time: number }
-  | { type: "gain";        gain: number; time: number }
-  | { type: "allNotesOff"; time: number };
+  | { type: "noteOn";        note: number; velocity: number; time: number }
+  | { type: "noteOff";       note: number; time: number }
+  | { type: "param";         key: string;  value: number }
+  | { type: "pitch";         frequencyHz: number; time: number }
+  | { type: "gain";          gain: number; time: number }
+  | { type: "allNotesOff";   time: number }
+  // v3.5
+  | { type: "trackerEffect"; effectCode: number; value: number; time: number }
+  | { type: "themeChange";   theme: PluginThemeOverride };
 ```
 
 Every event is a plain object with a `type` discriminator. Webview
@@ -26,12 +29,14 @@ window.addEventListener("message", (e) => {
   const ev = e.data;
   if (!ev || typeof ev !== "object") return;
   switch (ev.type) {
-    case "noteOn":      /* ev.note, ev.velocity, ev.time */ break;
-    case "noteOff":     /* ev.note, ev.time */ break;
-    case "param":       /* ev.key, ev.value */ break;
-    case "pitch":       /* ev.frequencyHz, ev.time */ break;
-    case "gain":        /* ev.gain, ev.time */ break;
-    case "allNotesOff": /* ev.time */ break;
+    case "noteOn":        /* ev.note, ev.velocity, ev.time */ break;
+    case "noteOff":       /* ev.note, ev.time */ break;
+    case "param":         /* ev.key, ev.value */ break;
+    case "pitch":         /* ev.frequencyHz, ev.time */ break;
+    case "gain":          /* ev.gain, ev.time */ break;
+    case "allNotesOff":   /* ev.time */ break;
+    case "trackerEffect": /* ev.effectCode, ev.value, ev.time (v3.5) */ break;
+    case "themeChange":   /* ev.theme is a ThemeColorSet (v3.5) */ break;
   }
 });
 ```
@@ -180,40 +185,110 @@ webview handler should mirror this by releasing whatever game /
 emulator state maps to "all keys up." See the DOOM example's
 `releaseAll()` function for a reference implementation.
 
+### `trackerEffect` (v3.5)
+
+Fires when a tracker effect-column command lands on a channel routed
+to the instrument. Opt-in via the webview control's
+`forwardEffects: true` flag (default `false`, so existing bridges
+don't see a new traffic class).
+
+```json
+{ "type": "trackerEffect", "effectCode": 4, "value": 66, "time": 1.234 }
+```
+
+| Field | Type | Range | Notes |
+|---|---|---|---|
+| `type` | string | — | Always `"trackerEffect"` |
+| `effectCode` | number | 0..15, 0xE_ | Raw MOD effect nibble (e.g. `0x4` = vibrato, `0x7` = tremolo). Extended `E_` effects are passed through with the full byte. |
+| `value` | number | 0–255 | Raw effect value byte — high/low nibbles are the effect's own to interpret. |
+| `time` | number | seconds | `AudioContext.currentTime` at dispatch. |
+
+**Semantics:** the host has already dispatched this effect to the
+plugin's native `applyTrackerEffect` hook (if any). The webview event
+is a *notification* — acting on it is purely for UI / visualisation
+purposes. Don't try to drive audio from it; the plugin's voice engine
+has already handled the effect.
+
+### `themeChange` (v3.5)
+
+Fires when the host's theme changes, either because the user picked a
+different global theme or because the plugin's own `ui.themeOverride`
+resolved against a changed global. The event carries the full resolved
+`ThemeColorSet` (globals merged with plugin override), so the iframe
+never needs to ask the host for a colour.
+
+```json
+{
+  "type": "themeChange",
+  "theme": {
+    "primary": "#ff7a00",
+    "primaryDim": "#7a3a00",
+    "bg": "#140800",
+    "text": "#ffddbb",
+    "...": "..."
+  }
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `type` | string | Always `"themeChange"` |
+| `theme` | `ThemeColorSet` | All 11 colour keys with fully-resolved CSS colour values (no `var(...)` references). |
+
+**When it fires:**
+
+- Once on iframe mount, shortly after the `__nt_ready` handshake
+  flushes the queue. This is the initial snapshot.
+- Again on every global theme change (built-in swap, custom theme
+  edit, live-preview slider).
+
+Typical iframe handler:
+
+```js
+case "themeChange":
+  for (const [k, v] of Object.entries(ev.theme)) {
+    document.documentElement.style.setProperty(
+      "--color-" + k.replace(/[A-Z]/g, m => "-" + m.toLowerCase()),
+      v,
+    );
+  }
+  break;
+```
+
+Setting the CSS vars inside the iframe lets your own stylesheet pick
+them up via `var(--color-primary)` the same way the tracker's host
+chrome does.
+
 ## What the event bus does NOT forward
 
-The following **do not** generate webview events in v1:
+The following **do not** generate webview events in v1/v3.5:
 
 - **Plugin load/unload** — no `init` or `dispose` event. Use the
   iframe's own `load` lifecycle.
-- **Raw MOD effect-column bytes** — reserved for a v2
-  `forwardEffects: true` flag (not yet implemented).
-- **Audio samples** — no PCM data forwarded to the iframe. Reserved
-  for a v2 `acceptsAudioFrames: true` flag.
 - **Other instruments' events** — the bridge is strictly per-instrument.
   A webview on instrument A doesn't see events on instrument B.
 - **Transport state** (play / stop / record) — the iframe can infer
   from `noteOn` / `allNotesOff` patterns but doesn't receive an
   explicit transport signal.
-- **Tempo / BPM changes** — not forwarded. The iframe gets event
-  timestamps but no global BPM context.
-
-If any of these matter for your plugin, either:
-
-1. File a feature request for a new event type
-2. Pass the data through a parameter (declare a `bpm` parameter and
-   update it from your host code — works but clunky)
-3. Accept the limitation — v1 is intentionally minimal
+- **Tempo / BPM changes** — not forwarded as an event. Inside the host
+  they drive BPM-synced LFOs (v3.5) via a separate channel. If your
+  webview needs BPM, declare a `bpm` parameter and update it from your
+  host code.
 
 ## Host-side filtering
 
-The webview control has two bridge filter flags:
+The webview control has three bridge filter flags:
 
 - `forwardNotes` (default `true`) — forwards `noteOn`, `noteOff`,
   `pitch`, `gain`, `allNotesOff`
 - `forwardParams` (default `true`) — forwards `param`
+- `forwardEffects` (default `false`, v3.5) — forwards `trackerEffect`
 
-Set either to `false` in `plugin.json` to save postMessage bandwidth:
+`themeChange` events are always forwarded when a bridge exists; they
+are low-frequency (mount + user-initiated theme changes) so there's no
+reason to throttle them.
+
+Set flags to `false` in `plugin.json` to save postMessage bandwidth:
 
 ```json
 { "type": "webview", "source": "web/scope.html", "forwardNotes": false }

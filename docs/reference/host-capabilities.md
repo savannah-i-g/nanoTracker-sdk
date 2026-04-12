@@ -19,6 +19,7 @@ Instrument plugins can **also** declare capabilities under
 | `modMatrix-v3` | v3.3 | v3 multi-target modulation routing (`targets[]`) |
 | `trackerEffects-v3` | v3.3 | tracker effect-column dispatch to plugin voice engines |
 | `webview-ui` | v3.4 | v3 `webview` UI control |
+| `themeOverride` | v3.5 | per-plugin InstrumentWindow theme colour overrides (`ui.themeOverride`) |
 
 ## Detailed reference
 
@@ -106,6 +107,21 @@ catches it and `ntpack` refuses to pack the archive otherwise.
 
 **See**: [`../09-webview.md`](../09-webview.md),
 [`../10-wasm-in-webview.md`](../10-wasm-in-webview.md)
+
+### `themeOverride`
+
+Enables the `ui.themeOverride` manifest field. When declared, the host
+reads a subset of the 11 theme colour keys from `ui.themeOverride` and
+applies them as scoped CSS custom properties on the plugin's
+InstrumentWindow — the override cascades to chrome, built-in UI
+controls, and (for webview plugins) is re-posted to the iframe as a
+`themeChange` event.
+
+**Triggers failure when**: `ui.themeOverride` is present and `requires`
+is missing `"themeOverride"`.
+
+**See**: [`../03-ui-controls.md`](../03-ui-controls.md),
+[`../09-webview.md`](../09-webview.md)
 
 ## When to declare
 
