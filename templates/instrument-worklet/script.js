@@ -6,8 +6,24 @@
   through a crude one-pole lowpass with an envelope-modulated cutoff.
 
   The goal of this file is to be the shortest plausible template for
-  a v1/v2 AudioWorklet instrument processor. Real plugins replace
-  every line here with their own DSP.
+  a legacy v1/v2 AudioWorklet instrument processor. Real plugins
+  replace every line of DSP here with their own.
+
+  Parameter routing (important, differs from what the Web Audio
+  platform may lead you to expect):
+
+  The nanoTracker host does NOT auto-wire plugin.json parameters
+  into AudioParam descriptors for the legacy whole-instrument worklet
+  path. Every UI knob change arrives as a port message:
+
+      { type: "param", key, value }
+
+  where `key` matches a `parameters[].key` from plugin.json. Store
+  the value on `this` in your `onmessage` handler and read it from
+  process(). Declaring `parameterDescriptors` here would give you a
+  `parameters` argument in `process()`, but the host never updates
+  those AudioParams from knob moves, so they'd be stuck at their
+  defaults — don't bother.
 
   Message protocol (host → worklet):
     { type: "noteOn", note, velocity, frequency }
@@ -21,22 +37,17 @@
 */
 
 class MyWorkletProcessor extends AudioWorkletProcessor {
-  static get parameterDescriptors() {
-    // AudioParam declarations exposed on the AudioWorkletNode side.
-    // The nanoTracker host forwards param changes for matching keys
-    // in plugin.json to these via setValueAtTime. Everything else
-    // arrives as a generic { type: "param" } message.
-    return [
-      { name: "cutoff",    defaultValue: 1200, minValue: 40,  maxValue: 16000, automationRate: "k-rate" },
-      { name: "resonance", defaultValue: 0.3,  minValue: 0,   maxValue: 0.95,  automationRate: "k-rate" },
-      { name: "envAmt",    defaultValue: 0.6,  minValue: 0,   maxValue: 1,     automationRate: "k-rate" },
-      { name: "decay",     defaultValue: 0.3,  minValue: 0.01, maxValue: 2,    automationRate: "k-rate" },
-      { name: "detune",    defaultValue: 0,    minValue: -100, maxValue: 100,  automationRate: "k-rate" },
-    ];
-  }
-
   constructor() {
     super();
+
+    // Parameter state — kept in sync with plugin.json defaults.
+    // Updated from port "param" messages and read in process().
+    this.cutoff    = 1200;
+    this.resonance = 0.3;
+    this.envAmt    = 0.6;
+    this.decay     = 0.3;
+    this.detune    = 0;
+
     this._phase = 0;
     this._freq = 0;
     this._gate = 0;      // 1 while a note is held
@@ -63,57 +74,55 @@ class MyWorkletProcessor extends AudioWorkletProcessor {
         this._env  = 0;
         break;
       case "param":
-        // Non-AudioParam parameter updates land here. For this
-        // template all params are AudioParams (declared above), so
-        // this branch is unused — but leave it so authors know the
-        // shape.
+        // Store UI-knob changes on instance fields for process() to
+        // read. `msg.key` is whatever you declared in plugin.json.
+        switch (msg.key) {
+          case "cutoff":    this.cutoff    = msg.value; break;
+          case "resonance": this.resonance = msg.value; break;
+          case "envAmt":    this.envAmt    = msg.value; break;
+          case "decay":     this.decay     = msg.value; break;
+          case "detune":    this.detune    = msg.value; break;
+        }
         break;
     }
   }
 
-  process(inputs, outputs, parameters) {
+  process(inputs, outputs) {
     const output = outputs[0];
     if (!output || !output[0]) return true;
 
     const chan = output[0];
     const len = chan.length;
 
-    const cutoff    = parameters.cutoff;
-    const resonance = parameters.resonance;
-    const envAmt    = parameters.envAmt;
-    const decay     = parameters.decay;
-    const detune    = parameters.detune;
+    const cutoff    = this.cutoff;
+    const resonance = this.resonance;
+    const envAmt    = this.envAmt;
+    const decay     = this.decay;
+    const detune    = this.detune;
 
     for (let i = 0; i < len; i++) {
-      // k-rate params are length-1 arrays; a-rate would be length=len.
-      const c   = cutoff[0]    ?? cutoff[i]    ?? 1200;
-      const r   = resonance[0] ?? resonance[i] ?? 0.3;
-      const env = envAmt[0]    ?? envAmt[i]    ?? 0.6;
-      const dec = decay[0]     ?? decay[i]     ?? 0.3;
-      const det = detune[0]    ?? detune[i]    ?? 0;
-
       // Envelope: instant attack, exponential decay toward 0 while
       // the note is held, fast release on noteOff.
       if (this._gate) {
-        this._env += (0 - this._env) * (1 / (dec * sampleRate));
+        this._env += (0 - this._env) * (1 / (decay * sampleRate));
       } else {
         this._env += (0 - this._env) * (1 / (0.02 * sampleRate));
       }
 
       // Sawtooth oscillator — naive, not band-limited. For a real
       // plugin use polyBLEP or a wavetable to kill aliasing.
-      const freq = this._freq * Math.pow(2, det / 1200);
+      const freq = this._freq * Math.pow(2, detune / 1200);
       this._phase += freq / sampleRate;
       if (this._phase >= 1) this._phase -= 1;
       const saw = this._phase * 2 - 1;
 
       // One-pole lowpass with envelope-modulated cutoff.
-      const modCut = Math.min(16000, c + this._env * envAmt[0] * 8000);
+      const modCut = Math.min(16000, cutoff + this._env * envAmt * 8000);
       const alpha  = Math.exp(-2 * Math.PI * modCut / sampleRate);
       this._lpState = saw * (1 - alpha) + this._lpState * alpha;
 
       // Soft saturation to tame the aliasing + crude resonance.
-      const res = this._lpState + (this._lpState - saw) * r;
+      const res = this._lpState + (this._lpState - saw) * resonance;
       chan[i] = Math.tanh(res) * 0.4;
     }
 

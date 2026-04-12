@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 2,
+  "manifest": {
+    "name": "ACID 303",
+    "version": "1.0.0",
+    "type": "instrument",
+    "author": "nanoTracker SDK",
+    "description": "Monophonic TB-303-style acid bassline synth — sawtooth/square, 4-pole resonant ladder filter, snappy decay envelope and accent."
+  },
+  "parameters": [
+    { "key": "waveform",  "label": "WAVE",   "min": 0,    "max": 1,     "default": 0,    "step": 1,    "displayDecimals": 0 },
+    { "key": "tuning",    "label": "TUNE",   "min": -1200,"max": 1200,  "default": 0,    "step": 1,    "unit": "c",  "displayDecimals": 0 },
+    { "key": "cutoff",    "label": "CUTOFF", "min": 60,   "max": 12000, "default": 800,  "step": 1,    "unit": "Hz", "displayDecimals": 0, "curve": "exponential" },
+    { "key": "resonance", "label": "RESO",   "min": 0,    "max": 1,     "default": 0.75, "step": 0.01, "displayDecimals": 2 },
+    { "key": "envMod",    "label": "ENV MOD","min": 0,    "max": 1,     "default": 0.6,  "step": 0.01, "displayDecimals": 2 },
+    { "key": "decay",     "label": "DECAY",  "min": 0.05, "max": 2.5,   "default": 0.4,  "step": 0.01, "unit": "s",  "displayDecimals": 2, "curve": "exponential" },
+    { "key": "accent",    "label": "ACCENT", "min": 0,    "max": 1,     "default": 0.6,  "step": 0.01, "displayDecimals": 2 },
+    { "key": "slideTime", "label": "SLIDE",  "min": 0.01, "max": 0.5,   "default": 0.08, "step": 0.005,"unit": "s",  "displayDecimals": 3 },
+    { "key": "drive",     "label": "DRIVE",  "min": 0,    "max": 1,     "default": 0.25, "step": 0.01, "displayDecimals": 2 },
+    { "key": "volume",    "label": "VOL",    "min": 0,    "max": 1,     "default": 0.8,  "step": 0.01, "displayDecimals": 2 }
+  ],
+  "dsp": {
+    "processorName": "acid-303-processor",
+    "voices": 1,
+    "voiceStealing": "oldest",
+    "oscillators": [],
+    "samples": [],
+    "envelope": { "attack": 0.001, "decay": 0.4, "sustain": 1, "release": 0.02 },
+    "filter": null
+  },
+  "ui": {
+    "layout": "flex",
+    "accentColor": "#ff7a1a",
+    "controls": [
+      { "type": "knob", "parameter": "waveform",  "label": "WAVE"   },
+      { "type": "knob", "parameter": "tuning",    "label": "TUNE"   },
+      { "type": "knob", "parameter": "cutoff",    "label": "CUTOFF" },
+      { "type": "knob", "parameter": "resonance", "label": "RESO"   },
+      { "type": "knob", "parameter": "envMod",    "label": "ENV"    },
+      { "type": "knob", "parameter": "decay",     "label": "DECAY"  },
+      { "type": "knob", "parameter": "accent",    "label": "ACCENT" },
+      { "type": "knob", "parameter": "slideTime", "label": "SLIDE"  },
+      { "type": "knob", "parameter": "drive",     "label": "DRIVE"  },
+      { "type": "knob", "parameter": "volume",    "label": "VOL"    }
+    ]
+  }
+}

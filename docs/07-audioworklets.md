@@ -140,14 +140,24 @@ Things to notice:
 
 1. **`registerProcessor("my-bitcrush", ...)`** at the bottom. The
    string must match `dsp.processorName` in `plugin.json`.
-2. **`parameterDescriptors`** — AudioParam declarations. These become
-   the `parameters` argument to `process()`. The host wires
-   `plugin.json` parameters with matching `key` names to these via
-   `AudioParam.setTargetAtTime`.
+2. **`parameterDescriptors` are not auto-wired in the legacy path.**
+   Declaring them gives you the `parameters` argument to `process()`
+   and nothing more — the host does **not** call `setValueAtTime` on
+   those AudioParams from knob moves. Legacy FX and legacy
+   whole-instrument worklets receive every UI parameter change as a
+   `{ type: "param", key, value }` message on `this.port`; store the
+   value on your processor instance and read it in `process()`. The
+   `parameters` argument is still useful for signals you *do* feed
+   as AudioParams from inside the host graph (reserved per-voice
+   `pitch`/`gate`/`velocity`/`gain` on v3 graph-node worklets, or
+   modulation routes in v3 graphs) — but plain user knobs always
+   travel over the port.
 3. **k-rate vs a-rate.** `"k-rate"` parameters give you one value per
    block (`parameters.bits[0]`). `"a-rate"` parameters give you one
    value per sample (`parameters.bits[i]`). k-rate is cheaper; use
-   a-rate only when you need sample-accurate modulation.
+   a-rate only when you need sample-accurate modulation. (Only
+   relevant for the per-voice reserved params in v3 graph-node form —
+   port-message params are plain instance fields, no k/a-rate.)
 4. **`return true`** to keep the processor alive. Returning `false`
    terminates it — only use if you've done a one-shot and want to be
    garbage-collected.
@@ -164,8 +174,8 @@ host tells the processor to start and stop notes via `this.port`:
 class MySynthProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this._voices = [];  // active voices
-    this._params = { cutoff: 1200 };
+    this._voices = [];     // active voices
+    this.cutoff  = 1200;   // UI param state, updated from port messages
     this.port.onmessage = (e) => this._handleMessage(e.data);
   }
 
@@ -190,17 +200,21 @@ class MySynthProcessor extends AudioWorkletProcessor {
         for (const v of this._voices) v.releasing = true;
         break;
       case "param":
-        this._params[msg.key] = msg.value;
+        // Store knob values on `this`. This is the ONLY way
+        // UI parameters reach a legacy instrument worklet —
+        // do not read from the `parameters` argument.
+        if (msg.key === "cutoff") this.cutoff = msg.value;
         break;
     }
   }
 
-  process(inputs, outputs, parameters) {
+  process(inputs, outputs) {
     const output = outputs[0];
     if (!output || !output[0]) return true;
 
     const chan = output[0];
     const len  = chan.length;
+    const cutoff = this.cutoff; // read instance field, not parameters
 
     for (let i = 0; i < len; i++) {
       let sum = 0;
@@ -250,19 +264,25 @@ not all of them.
 
 ### `parameterDescriptors` for instrument processors
 
-Instrument processors can use `parameterDescriptors` alongside the
-message protocol — the host forwards parameter UI changes as **both**
-AudioParam updates AND `{ type: "param" }` messages. Pick one or the
-other consistently:
+**Skip `parameterDescriptors` for legacy whole-instrument worklets.**
+The host's legacy instrument engine forwards every UI parameter
+change as a `{ type: "param", key, value }` port message and does
+not touch any AudioParam on the node. Declaring
+`parameterDescriptors` is legal — it just gives you a `parameters`
+argument in `process()` whose values are frozen at the descriptor
+defaults, since nothing updates them. Store knob state on `this`
+from the port handler and read it in `process()` — this is what
+every shipping legacy instrument worklet does (see the
+`templates/instrument-worklet/` template for the canonical shape).
 
-- **AudioParam** — cleaner for values you read in `process()` every
-  block (filter cutoff, LFO rate, reverb mix)
-- **Port messages** — cleaner for values that trigger logic
-  (preset changes, mode switches, things that shouldn't ramp)
-
-For the v3 contract, the host auto-wires the magic
-`pitch`/`gate`/`velocity`/`gain` names — see
-[`08-worklet-v3.md`](08-worklet-v3.md).
+If you need AudioParam-backed per-voice signals (pitch tracking
+from the host, a sample-accurate gate, velocity modulation), use
+the **v3 graph-node form** instead, where `pitch`/`gate`/`velocity`/
+`gain` are auto-wired from per-voice control ConstantSources — see
+[`08-worklet-v3.md`](08-worklet-v3.md). v3 graph-node worklets get
+dotted-key parameter routing via `AudioParam.setTargetAtTime`,
+which is the only legacy-free way to get "real" AudioParams in
+a nanoTracker plugin.
 
 ## Loading and error handling
 
