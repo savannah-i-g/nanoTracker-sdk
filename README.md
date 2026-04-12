@@ -197,9 +197,11 @@ this SDK — just this folder. The tracker is only required for the final
 
 ## Licensing
 
-This SDK's documentation, CLIs, and templates are released under the
-same terms as the parent nanoTracker project (see the repository root
-for the license file).
+This SDK's documentation, CLIs, and templates are released under the 
+(see the repository root for the license file). 
+This SDK is MIT-licensed. Plugins built with it can be any license you want. 
+The one exception is examples/doom-wasm/, which inherits GPL-2.0 from the upstream DOOM WebAssembly port it embeds; 
+see that directory's own LICENSE and CREDITS.md for details.
 
 **Individual examples may have their own licenses.** In particular,
 [`examples/doom-wasm/`](examples/doom-wasm/) is GPL-2.0 because it
