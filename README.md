@@ -197,8 +197,6 @@ this SDK — just this folder. The tracker is only required for the final
 
 ## Licensing
 
-This SDK's documentation, CLIs, and templates are released under the 
-(see the repository root for the license file). 
 This SDK is MIT-licensed. Plugins built with it can be any license you want. 
 The one exception is examples/doom-wasm/, which inherits GPL-2.0 from the upstream DOOM WebAssembly port it embeds; 
 see that directory's own LICENSE and CREDITS.md for details.
