@@ -176,8 +176,68 @@ sample-accurate scheduling survives the main-thread → audio-thread hop.
 | `voiceEnded`    | `voiceId`                       | Processor reclaimed a voice; host may release tracking |
 | `meter`         | `level, peak`                   | Periodic level meter for UI display                    |
 | `error`         | `message, voiceId?`             | Recoverable processor-side error; logged by host       |
+| `__nt_error`    | `where, message` *(v3.5)*       | Processor-side exception report; see §6a               |
 
 The host **MUST** ignore unknown message types (forward compatibility).
+
+### 6a. Surfacing `port.onmessage` exceptions (v3.5)
+
+Web Audio disconnects an `AudioWorkletNode` silently if its
+`process()` throws or its `port.onmessage` handler throws — there is
+no console output, no host-visible signal, and the plugin's instrument
+simply stops producing audio while the rest of the tracker keeps
+running. To diagnose this failure class in the field, v3.5 hosts
+listen for a `__nt_error` message type on the worklet-to-host channel
+and surface it through both `console.error` and a `fi-worklet-error`
+DOM event.
+
+Plugin authors writing their own processors should wrap their
+`port.onmessage` body in a `try` / `catch` and post the caught error
+back to the host:
+
+```js
+class MyProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.port.onmessage = (event) => {
+      try {
+        // your existing message handling — loadAsset, noteOn, etc.
+        this._handle(event.data);
+      } catch (err) {
+        // Surface the exception to the host instead of letting it
+        // disappear. `where` is a short label that identifies this
+        // site in your processor; `message` is the error text.
+        try {
+          this.port.postMessage({
+            type: "__nt_error",
+            where: "my-plugin.port.onmessage",
+            message: (err && err.message) ? String(err.message) : String(err),
+          });
+        } catch { /* port dead — nothing to do */ }
+      }
+    };
+  }
+}
+```
+
+The host's `onprocessorerror` wiring already catches hard crashes (an
+unhandled throw inside `process()`, a return-false from `process()`);
+the `__nt_error` convention covers the *soft* case where your message
+handler fails but the processor itself is still alive and could
+continue if only the host knew something was wrong.
+
+**Fields**
+
+| Field      | Type   | Purpose |
+|------------|--------|---------|
+| `type`     | string | Must be `"__nt_error"`. |
+| `where`    | string | Short label identifying the site — `"my-plugin.port.onmessage"`, `"my-plugin.loadAsset"`, etc. Shown to the user / developer in the host's error log. |
+| `message`  | string | Human-readable error description. Usually `err.message`. |
+
+This convention is **optional but recommended**. Processors that omit
+it still work exactly as before; hosts that don't recognise it
+(pre-v3.5) simply ignore the message per the forward-compatibility
+rule above.
 
 ---
 

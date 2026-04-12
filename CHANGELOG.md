@@ -54,6 +54,17 @@ and adds the headline feature: per-plugin window theme overrides.
   `framePosition` in 0..1, `gain`) are now documented.
 - `playbackMode` enum explicitly lists all four supported values.
 
+**Authoring convention (optional, recommended):**
+
+- Plugin-authored AudioWorklet processors can now post
+  `{type: "__nt_error", where, message}` from a `try`/`catch` inside
+  their `port.onmessage` handler to surface handler-side exceptions to
+  the host. The host's error listener logs them and dispatches a
+  `fi-worklet-error` DOM event. See
+  [`docs/reference/worklet-protocol.md`](docs/reference/worklet-protocol.md#6a-surfacing-portonmessage-exceptions-v35)
+  §6a. Processors that don't adopt the convention keep working exactly
+  as before.
+
 **No breaking changes.** All existing plugins load unchanged.
 
 ## v3.4 — webview UI control (2026-04)
