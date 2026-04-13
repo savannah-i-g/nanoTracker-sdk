@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 4,
+  "manifest": {
+    "name": "COMP SC",
+    "version": "1.0.0",
+    "type": "fx",
+    "author": "nanoTracker SDK",
+    "description": "Compressor with dedicated sidechain trigger input"
+  },
+  "requires": ["pedal-v4", "portsV4", "graph"],
+  "ports": {
+    "inputs": [
+      { "id": "in", "label": "IN", "kind": "audio" },
+      { "id": "sc", "label": "SC", "kind": "sidechain" }
+    ],
+    "outputs": [
+      { "id": "out", "label": "OUT", "kind": "audio" }
+    ]
+  },
+  "parameters": [
+    { "key": "threshold", "label": "THR", "min": -60, "max": 0,  "default": -18, "step": 0.5, "unit": "dB" },
+    { "key": "ratio",     "label": "RATIO", "min": 1,  "max": 20, "default": 4,   "step": 0.1 },
+    { "key": "attack",    "label": "ATK", "min": 0.001, "max": 0.5, "default": 0.003, "step": 0.001, "unit": "s" },
+    { "key": "release",   "label": "REL", "min": 0.01, "max": 2, "default": 0.25, "step": 0.01, "unit": "s" }
+  ],
+  "dsp": {
+    "processorName": null,
+    "nodes": [
+      { "id": "comp", "type": "compressor", "threshold": -18, "ratio": 4, "attack": 0.003, "release": 0.25, "knee": 6 },
+      { "id": "scGain", "type": "gain", "gain": 1 }
+    ],
+    "connections": [
+      { "from": "port:in",  "to": "comp" },
+      { "from": "port:sc",  "to": "scGain" },
+      { "from": "scGain",   "to": "comp", "toParam": "threshold" },
+      { "from": "comp",     "to": "port:out" }
+    ]
+  },
+  "ui": {
+    "layout": "flex",
+    "controls": [
+      { "type": "knob", "parameter": "threshold" },
+      { "type": "knob", "parameter": "ratio"     },
+      { "type": "knob", "parameter": "attack"    },
+      { "type": "knob", "parameter": "release"   }
+    ]
+  }
+}

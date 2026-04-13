@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --color-primary: #ff7a00;
+    --color-bg: #140800;
+    --color-text: #ffddbb;
+    --color-border: #664422;
+  }
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font: 10px "Kode Mono", monospace;
+    padding: 6px;
+  }
+  .row { display: flex; gap: 4px; align-items: center; }
+  .ch  { display: flex; flex-direction: column; align-items: center; flex: 1; gap: 2px; }
+  .fader {
+    width: 16px; height: 100px; background: var(--color-bg);
+    border: 1px solid var(--color-border); position: relative;
+    cursor: ns-resize;
+  }
+  .fader-cap {
+    position: absolute; left: 0; right: 0; height: 8px;
+    background: var(--color-primary);
+    transform: translateY(-50%);
+  }
+  .pan { width: 40px; }
+  label { font-size: 8px; opacity: 0.7; letter-spacing: 0.1em; }
+</style>
+</head>
+<body>
+<div class="row">
+  <div class="ch"><label>1</label><div class="fader" data-ch="1"><div class="fader-cap"></div></div><input class="pan" type="range" min="-1" max="1" step="0.01" value="0" data-pan="1"></div>
+  <div class="ch"><label>2</label><div class="fader" data-ch="2"><div class="fader-cap"></div></div><input class="pan" type="range" min="-1" max="1" step="0.01" value="0" data-pan="2"></div>
+  <div class="ch"><label>3</label><div class="fader" data-ch="3"><div class="fader-cap"></div></div><input class="pan" type="range" min="-1" max="1" step="0.01" value="0" data-pan="3"></div>
+  <div class="ch"><label>4</label><div class="fader" data-ch="4"><div class="fader-cap"></div></div><input class="pan" type="range" min="-1" max="1" step="0.01" value="0" data-pan="4"></div>
+</div>
+<script>
+(function(){
+  // v4 iframe → host bridge. paramWrite requires the host capability
+  // "webview-writes" and the control's acceptsParamWrites:true flag.
+  function write(key, value) {
+    window.parent.postMessage({ type: "paramWrite", key, value }, "*");
+  }
+
+  function applyFaderFromPx(f, y) {
+    const r = f.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, 1 - (y - r.top) / r.height));
+    // 0..2 gain range, 1.0 at midpoint
+    const v = ratio * 2;
+    f.querySelector(".fader-cap").style.top = ((1 - ratio) * 100) + "%";
+    return v;
+  }
+  document.querySelectorAll(".fader").forEach(f => {
+    const ch = f.dataset.ch;
+    // Initial position at unity (1.0)
+    f.querySelector(".fader-cap").style.top = "50%";
+    let dragging = false;
+    f.addEventListener("mousedown", e => { dragging = true; write(`gain${ch}`, applyFaderFromPx(f, e.clientY)); e.preventDefault(); });
+    window.addEventListener("mousemove", e => { if (dragging) write(`gain${ch}`, applyFaderFromPx(f, e.clientY)); });
+    window.addEventListener("mouseup", () => { dragging = false; });
+  });
+  document.querySelectorAll(".pan").forEach(p => {
+    p.addEventListener("input", () => write(`pan${p.dataset.pan}`, parseFloat(p.value)));
+  });
+
+  // Ready handshake — flushes the host's event queue so initial param
+  // + theme events arrive as soon as possible.
+  window.parent.postMessage({ type: "__nt_ready" }, "*");
+
+  // Pick up theme changes so the UI follows host colour swaps.
+  window.addEventListener("message", e => {
+    const ev = e.data;
+    if (!ev || typeof ev !== "object") return;
+    if (ev.type === "themeChange" && ev.theme) {
+      for (const [k, v] of Object.entries(ev.theme)) {
+        const cssVar = "--color-" + k.replace(/[A-Z]/g, m => "-" + m.toLowerCase());
+        document.documentElement.style.setProperty(cssVar, v);
+      }
+    }
+    if (ev.type === "param") {
+      // Could update the fader positions here if the host drives the
+      // param from automation / tracker effects; omitted for brevity.
+    }
+    if (ev.type === "__nt_error") {
+      console.warn("[4CH MIXER]", ev.where, ev.message);
+    }
+  });
+})();
+</script>
+</body>
+</html>

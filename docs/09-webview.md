@@ -86,6 +86,10 @@ Every tracker event lands in the iframe's log.
 | `forwardEffects` | `false` | *(v3.5)* forward `trackerEffect` events (raw MOD effect-column bytes). See [`reference/event-bus.md`](reference/event-bus.md#trackereffect-v35). |
 | `acceptsAudioFrames` | `false` | *(v3.5)* route PCM audio posted from the iframe back into the host's per-instrument output chain. See [`12-webview-audio.md`](12-webview-audio.md). |
 | `acceptsFocus` | `true` | when `false`, disables pointer events on the iframe so the tracker keeps keyboard focus even while the cursor is over it |
+| `acceptsParamWrites` | `false` | *(v4)* iframe can post `{type:"paramWrite",key,value}` to set parameter values. Requires `"webview-writes"` capability. See [Bidirectional bridge (v4)](#bidirectional-bridge-v4). |
+| `acceptsPresetWrites` | `false` | *(v4)* iframe can post `presetLoad` / `presetSave`. Requires `"webview-writes"`. |
+| `acceptsNotes` | `false` | *(v4)* iframe can post `noteOn` / `noteOff` into the plugin's voice engine. Requires `"webview-writes"`. |
+| `acceptsHostCommands` | `false` | *(v4)* iframe can post `hostCommand` messages (focus, resize, toast, sample picker). Requires `"webview-writes"`. |
 
 Only `source` is required. Everything else has sensible defaults.
 
@@ -173,17 +177,86 @@ and your iframe stays in sync with theme changes (including per-plugin
 
 ### What the iframe can post back
 
-The host recognises two iframe-originated message types:
+Pre-v4 the bridge was read-only: the host mounted the iframe, forwarded
+events, and ignored everything except `__nt_ready` and (v3.5)
+`__nt_audio`. v4 opens a typed write channel so interactive webview UIs
+— mixer pedal faders, in-plugin preset browsers, step sequencers — can
+drive the host instead of just visualising it.
+
+Always-available iframe-originated messages (all versions):
 
 - `{ type: "__nt_ready" }` — **ready handshake.** Flushes the queued
   event stream early (otherwise the host waits for the iframe's
   `load` event). Always send this as the first line of your script.
 - `{ type: "__nt_audio", left, right?, sampleRate? }` — **v3.5 PCM
   route-back.** Only active when the control declares
-  `acceptsAudioFrames: true`. Sends audio frames upstream into the
-  tracker's output chain. See [`12-webview-audio.md`](12-webview-audio.md).
+  `acceptsAudioFrames: true`. See [`12-webview-audio.md`](12-webview-audio.md).
 
-Other iframe-to-host messages are ignored in v3.5.
+### Bidirectional bridge (v4)
+
+Opt in by declaring both:
+
+1. `"webview-writes"` in top-level `requires[]`
+2. The matching per-control flag (`acceptsParamWrites`,
+   `acceptsPresetWrites`, `acceptsNotes`, `acceptsHostCommands`)
+
+With opt-in, the iframe can post:
+
+```js
+// Drag a fader:
+window.parent.postMessage({ type: "paramWrite", key: "cutoff", value: 2400 }, "*");
+
+// Load a factory preset (see "presetList" event for the available ids):
+window.parent.postMessage({ type: "presetLoad", presetId: "preset-1" }, "*");
+
+// Save the current params as a new user preset:
+window.parent.postMessage({
+  type: "presetSave",
+  name: "My Init",
+  params: { cutoff: 2400, resonance: 0.5 }
+}, "*");
+
+// Trigger a note from an in-iframe keyboard:
+window.parent.postMessage({ type: "noteOn",  note: 60, velocity: 100 }, "*");
+window.parent.postMessage({ type: "noteOff", note: 60 },                 "*");
+
+// Ask the host for generic UX services:
+window.parent.postMessage({ type: "hostCommand", command: "focusRequest" },                 "*");
+window.parent.postMessage({ type: "hostCommand", command: "resizeRequest", args: { w: 480, h: 320 } }, "*");
+window.parent.postMessage({ type: "hostCommand", command: "showToast",     args: { text: "Saved", kind: "info" } },  "*");
+window.parent.postMessage({ type: "hostCommand", command: "openSamplePicker" },             "*");
+```
+
+**Validation.** Every write runs through manifest checks on the host:
+
+| Message | Checked against | On failure |
+|---|---|---|
+| `paramWrite` | `parameters[].key` exists; value clamped to `min`/`max` | dropped, `__nt_error` back |
+| `presetLoad` | `presetId` resolves in current preset catalogue | dropped, `__nt_error` back |
+| `presetSave` | `name` non-empty, ≤64 chars; params match known keys | dropped, `__nt_error` back |
+| `noteOn` / `noteOff` | `note` 0..127, `velocity` 0..127 | clamped |
+| `hostCommand` | `command` in whitelist | dropped, `__nt_error` back |
+
+Dropped writes never throw; the host posts a diagnostic back:
+
+```js
+window.addEventListener("message", (e) => {
+  if (e.data?.type === "__nt_error") {
+    console.warn("[nt] write rejected:", e.data.where, e.data.message);
+  }
+});
+```
+
+**`hostCommand` whitelist.** The four commands above are the whole
+v4.0 surface. The host may ignore a command for UX reasons (e.g.
+`focusRequest` fails if the user has focused another window) — failures
+are silent by design. Authors should treat `hostCommand` as an
+advisory hint, not an imperative.
+
+**The `presetList` event.** The host posts the current preset catalogue
+as a `{type:"presetList", presets:[{id,name},…]}` event on mount, after
+every `presetSave`, and whenever the host reloads a project.
+See [`reference/event-bus.md`](reference/event-bus.md#presetlist-v4).
 
 ---
 

@@ -5,9 +5,9 @@ description. This page is the dense per-field lookup; the narrative
 docs in `../01-plugin-format.md` and its neighbours explain how to
 actually use them.
 
-**Version markers**: <sup>v1</sup> / <sup>v2</sup> / <sup>v3</sup>
-next to a field means it was introduced in that schema version.
-Unmarked fields are v1.
+**Version markers**: <sup>v1</sup> / <sup>v2</sup> / <sup>v3</sup> /
+<sup>v4</sup> next to a field means it was introduced in that schema
+version. Unmarked fields are v1.
 
 ---
 
@@ -15,26 +15,28 @@ Unmarked fields are v1.
 
 ```ts
 {
-  schemaVersion: 1 | 2 | 3,
+  schemaVersion: 1 | 2 | 3 | 4,
   manifest:      PluginManifest,
   parameters?:   PluginParamDef[],
   dsp:           PluginFxDsp | PluginInstrumentDsp,
   ui?:           PluginUiDef,
   presets?:      PluginPreset[],        // v2+
   loopPresets?:  PluginLoopPreset[],    // instruments only
+  ports?:        PluginPortsDef,        // v4 — unified typed port list
   requires?:     string[],              // v3+ capability flags
 }
 ```
 
 | Field | v | Required | Notes |
 |---|---|---|---|
-| `schemaVersion` | — | yes | Integer 1, 2, or 3 |
+| `schemaVersion` | — | yes | Integer 1, 2, 3, or 4 |
 | `manifest` | — | yes | Plugin identity (see below) |
 | `parameters` | — | no | Array of `PluginParamDef` |
 | `dsp` | — | yes | `PluginFxDsp` or `PluginInstrumentDsp`; branches on `manifest.type` |
 | `ui` | — | no | Optional UI definition; auto-generated when missing |
 | `presets` | v2 | no | Factory parameter snapshots |
 | `loopPresets` | — | no | Instrument-only step sequences |
+| `ports` | v4 | see below | Typed input/output port list. Required for `type: "fx"` (pedals). Optional for instruments (defaults to `{outputs:[{id:"out",label:"OUT",kind:"audio"}]}`). See [`../14-ports.md`](../14-ports.md). |
 | `requires` | v3 | no | Capability flag gating |
 
 Unknown top-level fields are silently ignored by the loader.
@@ -57,9 +59,69 @@ Unknown top-level fields are silently ignored by the loader.
 |---|---|---|
 | `name` | yes | Display name; forms part of plugin id `"plugin:<name>@<version>"` |
 | `version` | yes | Free-form string, convention is semver |
-| `type` | yes | Routes to correct DSP block schema |
+| `type` | yes | Routes to correct DSP block schema. From v4 onwards, `"fx"` means **pedal** (floating window + patch cables). Legacy mixer-module FX is retired. |
 | `author` | no | Attribution shown in UI |
 | `description` | no | One-line summary shown in UI |
+
+---
+
+## `PluginPortsDef` (v4)
+
+```ts
+{
+  inputs?:  PluginPortDef[],
+  outputs?: PluginPortDef[],
+}
+```
+
+Port list for the plugin's workspace jacks. Applies to both
+instruments and pedals — unified port model. When omitted on an
+instrument plugin, the host supplies a default
+`{outputs: [{id:"out", label:"OUT", kind:"audio"}]}`. **Required**
+for `type: "fx"` (pedal) plugins — the loader rejects pedals that
+omit `ports`.
+
+Narrative: [`../14-ports.md`](../14-ports.md).
+
+### `PluginPortDef`
+
+```ts
+{
+  id:     string,
+  label:  string,
+  kind:   "audio" | "sidechain" | "cv" | "gate",
+  target?: string,   // required when kind == "cv": "<nodeId>.<paramName>"
+  index?:  number,   // v4: override worklet input/output index for multi-port nodes
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `id` | yes | Unique within `inputs[]` / `outputs[]`. Referenced from cable snapshots. Use short stable strings (`inL`, `inR`, `outL`, `sc`, `cvCutoff`). |
+| `label` | yes | Display text on the jack in the UI. ALL-CAPS convention, 1–4 chars. |
+| `kind` | yes | See port-kind table below. |
+| `target` | when `kind: "cv"` | Names the target AudioParam inside the plugin's graph. Format: `"<nodeId>.<paramName>"`, e.g. `"filter.frequency"`. The host wires the incoming cable with `.connect(param)`. |
+| `index` | no | Worklet input/output index when a single AudioWorkletNode exposes multiple ports. Defaults to port's position in the `inputs[]` / `outputs[]` array. |
+
+### Port kinds
+
+| Kind | Wire | Visual | Use |
+|---|---|---|---|
+| `audio` | `srcNode.connect(dstNode, outIdx, inIdx)` | solid jack ring | Standard mono/stereo audio signal. |
+| `sidechain` | same as `audio` | dashed jack ring, sidechain accent | Electrically identical to `audio`, marked separately so users understand intent (compressor key input, ducker trigger, vocoder formant bus, etc.). |
+| `cv` | `srcNode.connect(param)` | cv accent ring | Audio-rate control voltage routed to an `AudioParam`. The `target` field names the parameter. |
+| `gate` | host-mediated edge watcher | dotted jack ring | Boolean trigger. Host watches the source for rising/falling edges above `0.5` and fires the plugin's gate handler. |
+
+### Compatibility matrix
+
+| Source \ Dest | audio | sidechain | cv | gate |
+|---|---|---|---|---|
+| `audio` | ✓ | ✓ | ✓ (scaled) | ✓ (edge) |
+| `sidechain` | ✓ | ✓ | ✓ | ✓ |
+| `cv` | ✗ | ✗ | ✓ | ✗ |
+| `gate` | ✗ | ✗ | ✗ | ✓ |
+
+Cross-kind mismatches are dropped silently with a console warning.
 
 ---
 
@@ -614,6 +676,11 @@ global theme change.
   forwardEffects?:      boolean,
   acceptsAudioFrames?:  boolean,
   acceptsFocus?:        boolean,
+  // v4 webview bidirectional bridge
+  acceptsParamWrites?:  boolean,
+  acceptsPresetWrites?: boolean,
+  acceptsNotes?:        boolean,
+  acceptsHostCommands?: boolean,
 }
 ```
 
@@ -646,6 +713,7 @@ global theme change.
 | `children`, `style` | `group` |
 | `width`, `height` | `waveform_view`, `meter`, `xy_pad`, `envelope_editor`, `webview` |
 | `source`, `aspectRatio`, `sandbox`, `forward*`, `accepts*` | `webview` |
+| `acceptsParamWrites`, `acceptsPresetWrites`, `acceptsNotes`, `acceptsHostCommands` | `webview` (v4 — gates iframe→host write channel per class). See [`../09-webview.md`](../09-webview.md#bidirectional-bridge-v4). |
 
 Narrative: [`../03-ui-controls.md`](../03-ui-controls.md),
 [`../09-webview.md`](../09-webview.md)

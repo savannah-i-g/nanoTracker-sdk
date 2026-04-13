@@ -143,8 +143,8 @@ export async function preflightPlugin(pluginJson, sourceDir) {
   // ── manifest ────────────────────────────────────────────────
   if (typeof pluginJson.schemaVersion !== "number") {
     issues.push(`plugin.json: schemaVersion is required (number)`);
-  } else if (![1, 2, 3].includes(pluginJson.schemaVersion)) {
-    issues.push(`plugin.json: unsupported schemaVersion ${pluginJson.schemaVersion} (supported: 1, 2, 3)`);
+  } else if (![1, 2, 3, 4].includes(pluginJson.schemaVersion)) {
+    issues.push(`plugin.json: unsupported schemaVersion ${pluginJson.schemaVersion} (supported: 1, 2, 3, 4)`);
   }
   const m = pluginJson.manifest;
   if (!m || typeof m !== "object") {
@@ -248,6 +248,82 @@ export async function preflightPlugin(pluginJson, sourceDir) {
     }
   }
 
+  // ── ports (v4) ─────────────────────────────────────────────
+  const PORT_KINDS = new Set(["audio", "sidechain", "cv", "gate"]);
+  const ports = pluginJson.ports;
+  const requires = Array.isArray(pluginJson.requires) ? pluginJson.requires : [];
+  const isV4Plus = typeof pluginJson.schemaVersion === "number" && pluginJson.schemaVersion >= 4;
+  const isFx = m && m.type === "fx";
+
+  if (ports !== undefined && ports !== null) {
+    if (typeof ports !== "object" || Array.isArray(ports)) {
+      issues.push(`ports must be an object with inputs[]/outputs[]`);
+    } else {
+      if (!requires.includes("portsV4")) {
+        issues.push(`ports is present but "portsV4" is missing from requires[] — add it or drop the block`);
+      }
+      const validatePortList = (list, dir) => {
+        if (list === undefined) return;
+        if (!Array.isArray(list)) {
+          issues.push(`ports.${dir} must be an array`);
+          return;
+        }
+        const seenIds = new Set();
+        for (const [i, p] of list.entries()) {
+          if (!p || typeof p !== "object") {
+            issues.push(`ports.${dir}[${i}] must be an object`);
+            continue;
+          }
+          if (typeof p.id !== "string" || !p.id.trim()) {
+            issues.push(`ports.${dir}[${i}].id is required (non-empty string)`);
+          } else if (seenIds.has(p.id)) {
+            issues.push(`ports.${dir}[${i}].id "${p.id}" is duplicated`);
+          } else {
+            seenIds.add(p.id);
+          }
+          if (typeof p.label !== "string" || !p.label.trim()) {
+            issues.push(`ports.${dir}[${i}].label is required (non-empty string)`);
+          }
+          if (!PORT_KINDS.has(p.kind)) {
+            issues.push(`ports.${dir}[${i}].kind must be one of ${[...PORT_KINDS].join(", ")} (got ${JSON.stringify(p.kind)})`);
+          }
+          if (p.kind === "cv" && dir === "inputs") {
+            if (typeof p.target !== "string" || !p.target.includes(".")) {
+              issues.push(`ports.inputs[${i}] (cv): target is required and must be "<nodeId>.<paramName>"`);
+            }
+          }
+        }
+      };
+      validatePortList(ports.inputs,  "inputs");
+      validatePortList(ports.outputs, "outputs");
+    }
+  }
+
+  // ── v4 pedal requirements ──────────────────────────────────
+  if (isV4Plus && isFx) {
+    if (!requires.includes("pedal-v4")) {
+      issues.push(`v4 fx plugins (pedals) must declare "pedal-v4" in requires[]`);
+    }
+    if (!ports || typeof ports !== "object" || !Array.isArray(ports.inputs) || ports.inputs.length === 0) {
+      issues.push(`v4 fx plugins (pedals) must declare at least one entry in ports.inputs[]`);
+    }
+    if (!ports || typeof ports !== "object" || !Array.isArray(ports.outputs) || ports.outputs.length === 0) {
+      issues.push(`v4 fx plugins (pedals) must declare at least one entry in ports.outputs[]`);
+    }
+  }
+
+  // ── webview-writes (v4) gating ─────────────────────────────
+  const WRITE_FLAG_KEYS = [
+    "acceptsParamWrites",
+    "acceptsPresetWrites",
+    "acceptsNotes",
+    "acceptsHostCommands",
+  ];
+  const anyWriteOptIn = webviews.some(wv => WRITE_FLAG_KEYS.some(k => wv[k] === true));
+  if (anyWriteOptIn && !requires.includes("webview-writes")) {
+    issues.push(`a webview control opts in to write-channel flags (${WRITE_FLAG_KEYS.join("/")}) but "webview-writes" is missing from requires[]`);
+  }
+
   // ── requires[] capability sanity ───────────────────────────
   // The set below is the current nanoTracker host capability list.
   // When a new flag ships, update this set and docs/reference/host-capabilities.md.
@@ -260,6 +336,10 @@ export async function preflightPlugin(pluginJson, sourceDir) {
     "trackerEffects-v3",
     "webview-ui",
     "themeOverride",
+    // v4
+    "portsV4",
+    "pedal-v4",
+    "webview-writes",
   ]);
   if (Array.isArray(pluginJson.requires)) {
     for (const cap of pluginJson.requires) {

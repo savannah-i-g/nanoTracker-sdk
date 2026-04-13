@@ -20,6 +20,9 @@ Instrument plugins can **also** declare capabilities under
 | `trackerEffects-v3` | v3.3 | tracker effect-column dispatch to plugin voice engines |
 | `webview-ui` | v3.4 | v3 `webview` UI control |
 | `themeOverride` | v3.5 | per-plugin InstrumentWindow theme colour overrides (`ui.themeOverride`) |
+| `portsV4` | v4.0 | unified typed `ports` block on any plugin (`PluginPortsDef`). |
+| `pedal-v4` | v4.0 | `type: "fx"` plugins as workspace pedals (floating window, patch cables, multi-port). |
+| `webview-writes` | v4.0 | iframe→host write channel (`paramWrite` / `presetLoad` / `presetSave` / `noteOn` / `noteOff` / `hostCommand`). |
 
 ## Detailed reference
 
@@ -122,6 +125,60 @@ is missing `"themeOverride"`.
 
 **See**: [`../03-ui-controls.md`](../03-ui-controls.md),
 [`../09-webview.md`](../09-webview.md)
+
+### `portsV4`
+
+Enables the unified typed `ports` block (`PluginPortsDef`) at the top
+level of `plugin.json`. When declared, the host reads `ports.inputs[]`
+and `ports.outputs[]` and exposes each entry as a jack on the plugin's
+InstrumentWindow (or pedal window). Ports carry a `kind` field
+(`"audio"` / `"sidechain"` / `"cv"` / `"gate"`) that drives both the
+jack rendering and the underlying Web Audio wiring.
+
+For instrument plugins the capability is optional — omitting both
+`ports` and `portsV4` reverts to the legacy single-output shape.
+
+**Triggers failure when**: `ports` is present and `requires` is
+missing `"portsV4"`.
+
+**See**: [`../14-ports.md`](../14-ports.md),
+[`schema.md#pluginportsdef-v4`](schema.md#pluginportsdef-v4)
+
+### `pedal-v4`
+
+Required for every `type: "fx"` plugin authored against v4.0 or later.
+Marks the plugin as a workspace pedal — rendered in a floating
+`TrackerWindow` with patch cables, host-injected per-OUT volume knobs,
+and a bypass toggle. Pedals must also declare `ports` and therefore
+`portsV4`; the loader rejects pedals missing either.
+
+Legacy `type: "fx"` plugins targeting the v1–v3 TrackerFxMixer module
+slot are **no longer accepted**. Projects that previously used them
+auto-migrate on load (see CHANGELOG v4.0).
+
+**Triggers failure when**: `manifest.type == "fx"` and `requires` is
+missing `"pedal-v4"` (or `ports` is missing).
+
+**See**: [`../13-pedals.md`](../13-pedals.md)
+
+### `webview-writes`
+
+Enables the iframe→host write channel on `webview` UI controls. When
+declared, the iframe can post `paramWrite`, `presetLoad`, `presetSave`,
+`noteOn`, `noteOff`, and `hostCommand` messages to the host.
+Per-message-class acceptance is additionally gated by the webview
+control's `acceptsParamWrites` / `acceptsPresetWrites` / `acceptsNotes`
+/ `acceptsHostCommands` fields — capability declares "I will use this
+at all", the field declares "on this specific webview control".
+
+Every write is validated against the manifest (param min/max,
+declared preset ids, `hostCommand` whitelist). Invalid writes are
+dropped and reported back to the iframe as `{type:"__nt_error"}`.
+
+**Triggers failure when**: any webview control sets any `accepts*`
+write flag to `true` and `requires` is missing `"webview-writes"`.
+
+**See**: [`../09-webview.md`](../09-webview.md#bidirectional-bridge-v4)
 
 ## When to declare
 

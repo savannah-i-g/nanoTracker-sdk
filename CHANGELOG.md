@@ -6,8 +6,94 @@ are **additive** — a v3 host accepts v1 / v2 / v3 plugins
 interchangeably, and a v1 plugin you shipped three years ago still
 works today.
 
+**v4.0 is the one exception**: it's a deliberate breaking reset that
+retires the mixer-module FX plugin shape. v1/v2/v3 instrument plugins
+continue to load unchanged. v1/v2/v3 FX plugins auto-migrate into the
+new pedal model on project load — see the v4.0 notes below.
+
 This is the authoring-side view. For the host-side implementation
 history, see `git log` in the main repo.
+
+---
+
+## v4.0 — FX pedals, unified typed ports, bidirectional webview (2026-04)
+
+The largest spec change since v3. Plugin FX leave the TrackerFxMixer
+and become first-class **pedals** — floating `TrackerWindow` chrome
+with labelled jacks and patch cables, multi-in / multi-out by default,
+host-injected per-OUT volume knobs, and a bypass toggle. Instruments
+and pedals share one typed port model (`"audio"` / `"sidechain"` /
+`"cv"` / `"gate"`). Webview UIs gain a write channel so interactive
+mixers and in-plugin preset browsers can drive the host.
+
+**New:**
+
+- `ports` top-level block with `PluginPortsDef` (`inputs[]`,
+  `outputs[]`, each with `{id, label, kind, target?, index?}`). See
+  [`docs/14-ports.md`](docs/14-ports.md) and
+  [`docs/reference/schema.md`](docs/reference/schema.md#pluginportsdef-v4).
+- Port kinds:
+  - `audio` — standard Web Audio node-to-node
+  - `sidechain` — electrically identical to `audio`, visually distinct
+  - `cv` — audio-rate control voltage routed to an `AudioParam`
+    (`target: "<nodeId>.<paramName>"`)
+  - `gate` — boolean trigger (host watches for rising/falling edges)
+- Pedal authoring path: `manifest.type == "fx"` with
+  `ports` + `"pedal-v4"` + `"portsV4"` in `requires[]`. See
+  [`docs/13-pedals.md`](docs/13-pedals.md).
+- Host-injected per-audio-output volume knob on pedal / instrument
+  window chrome. Manually declaring a plugin-side gain stage is no
+  longer required to get a usable fader.
+- Bypass toggle on pedal windows (audio IN short-circuits to audio OUT,
+  DSP silenced). Applies to every pedal without any opt-in.
+- Webview bidirectional bridge:
+  - iframe→host messages: `paramWrite`, `presetLoad`, `presetSave`,
+    `noteOn`, `noteOff`, `hostCommand`
+  - Per-control opt-in flags: `acceptsParamWrites`,
+    `acceptsPresetWrites`, `acceptsNotes`, `acceptsHostCommands`
+  - Host-side `hostCommand` whitelist: `focusRequest`, `resizeRequest`,
+    `showToast`, `openSamplePicker`
+  - New host→iframe event: `presetList` (catalogue snapshot for
+    in-plugin preset browsers)
+- New workspace pseudo-windows (host side, but relevant for pedal
+  authors): `TrackerBus` (per-channel stereo OUT jacks) and
+  `MasterIn` (stereo IN jack feeding master bus). Pedals sit between
+  them.
+- FxPattern automation now targets pedals by `workspaceId` +
+  `paramKey`. Plugins don't need to do anything — automation appears
+  in the mixer's automation panel once the pedal is in the workspace.
+- Capability flags: `"portsV4"`, `"pedal-v4"`, `"webview-writes"`.
+
+**Breaking changes:**
+
+- `type: "fx"` plugins authored against v1–v3 (mixer-module shape)
+  **no longer load**. The host auto-migrates them on project load:
+  each module instance becomes a pedal, pre-wired `TrackerBus.CHnn →
+  pedal → MasterIn`. Param values are preserved. First save after
+  migration drops the legacy mixer-module slot.
+- v4 FX plugins MUST declare `ports`. The loader rejects
+  `type: "fx"` plugins without a `ports.inputs[]` entry.
+- `PluginVoiceEngine.inputs: AudioNode[]` / `outputs: AudioNode[]` are
+  kept as deprecated getters delegating to `ports` for one release;
+  retired in v4.1.
+
+**Docs:**
+
+- [`docs/13-pedals.md`](docs/13-pedals.md) — pedal authoring guide
+- [`docs/14-ports.md`](docs/14-ports.md) — unified port model reference
+- [`docs/09-webview.md`](docs/09-webview.md) — bidirectional bridge
+- [`docs/reference/schema.md`](docs/reference/schema.md) — `PluginPortsDef`
+- [`docs/reference/host-capabilities.md`](docs/reference/host-capabilities.md) — three new caps
+- [`docs/reference/event-bus.md`](docs/reference/event-bus.md) — `presetList` event + iframe→host message table
+
+**Examples:**
+
+- [`examples/v40-mixer-pedal/`](examples/v40-mixer-pedal/) — 4-in 2-out
+  stereo mixer pedal with webview faders demonstrating `paramWrite`.
+- [`examples/v40-compressor-sc/`](examples/v40-compressor-sc/) —
+  compressor with a dedicated sidechain input.
+- [`examples/v40-cv-lfo/`](examples/v40-cv-lfo/) — utility pedal with
+  a CV OUT demonstrating modulation into another plugin's `cutoff`.
 
 ---
 

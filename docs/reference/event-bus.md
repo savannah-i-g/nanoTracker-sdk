@@ -18,7 +18,9 @@ export type VoiceEngineEvent =
   | { type: "allNotesOff";   time: number }
   // v3.5
   | { type: "trackerEffect"; effectCode: number; value: number; time: number }
-  | { type: "themeChange";   theme: PluginThemeOverride };
+  | { type: "themeChange";   theme: PluginThemeOverride }
+  // v4
+  | { type: "presetList";    presets: Array<{ id: string; name: string }> };
 ```
 
 Every event is a plain object with a `type` discriminator. Webview
@@ -258,6 +260,71 @@ case "themeChange":
 Setting the CSS vars inside the iframe lets your own stylesheet pick
 them up via `var(--color-primary)` the same way the tracker's host
 chrome does.
+
+### `presetList` (v4)
+
+Fires when the plugin's preset catalogue changes — on mount, after a
+`presetSave` write, or when the host loads a new project. Lets the
+iframe render its own preset browser without polling.
+
+```json
+{
+  "type": "presetList",
+  "presets": [
+    { "id": "preset-0", "name": "INIT" },
+    { "id": "preset-1", "name": "DUSTY PAD" }
+  ]
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `type` | string | Always `"presetList"` |
+| `presets` | array | One entry per preset known to the host. `id` is stable; `name` is user-facing and may change on rename. |
+
+The iframe triggers a preset load by posting
+`{type: "presetLoad", presetId: "preset-1"}` back — see
+[`../09-webview.md`](../09-webview.md#bidirectional-bridge-v4).
+
+## Iframe → host messages (v4)
+
+The v4 bridge opens a write channel for webview plugins that opt in
+via `"webview-writes"` capability and per-control `accepts*` flags.
+The iframe posts any of the following shapes via
+`window.parent.postMessage(msg, "*")`:
+
+```typescript
+export type IframeToHostMessage =
+  | { type: "__nt_ready" }                                                // v3.4
+  | { type: "__nt_audio"; left: Float32Array; right?: Float32Array }      // v3.5
+  | { type: "__nt_error"; where: string; message: string }                // v3.5 (worklet authors)
+  // v4 write channel (gated by "webview-writes" + per-control flags)
+  | { type: "paramWrite";  key: string; value: number }
+  | { type: "presetLoad";  presetId: string }
+  | { type: "presetSave";  name: string; params: Record<string, number> }
+  | { type: "noteOn";      note: number; velocity: number }
+  | { type: "noteOff";     note: number }
+  | { type: "hostCommand";
+      command: "focusRequest" | "resizeRequest" | "showToast" | "openSamplePicker";
+      args?: unknown };
+```
+
+Every v4 write is validated against the plugin's manifest:
+
+- `paramWrite` — `key` must exist in `parameters[]`, value clamped to
+  the declared `min`/`max`.
+- `presetLoad` — `presetId` must match an entry in `presets[]` (or
+  a runtime-saved preset id).
+- `presetSave` — `name` trimmed, non-empty, ≤64 chars. Stored on the
+  workspace instrument snapshot; persists through save/load.
+- `noteOn` / `noteOff` — dispatched into the plugin's voice engine
+  exactly as if the user played them from the tracker keyboard.
+- `hostCommand` — `command` must be in the whitelist. `args` shape
+  depends on the command (see table in `09-webview.md`).
+
+Invalid writes never throw — the host drops them and posts
+`{type:"__nt_error", where:"<msgType>", message:"<reason>"}` back into
+the iframe so author-side consoles can see what went wrong.
 
 ## What the event bus does NOT forward
 

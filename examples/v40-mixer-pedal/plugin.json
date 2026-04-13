@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 4,
+  "manifest": {
+    "name": "4CH MIXER",
+    "version": "1.0.0",
+    "type": "fx",
+    "author": "nanoTracker SDK",
+    "description": "4-in stereo mixer pedal with per-channel gain + pan"
+  },
+  "requires": ["pedal-v4", "portsV4", "graph", "webview-ui", "webview-writes", "themeOverride"],
+  "ports": {
+    "inputs": [
+      { "id": "in1", "label": "1", "kind": "audio" },
+      { "id": "in2", "label": "2", "kind": "audio" },
+      { "id": "in3", "label": "3", "kind": "audio" },
+      { "id": "in4", "label": "4", "kind": "audio" }
+    ],
+    "outputs": [
+      { "id": "outL", "label": "L", "kind": "audio" },
+      { "id": "outR", "label": "R", "kind": "audio" }
+    ]
+  },
+  "parameters": [
+    { "key": "gain1", "label": "GAIN 1", "min": 0, "max": 2, "default": 1, "step": 0.01 },
+    { "key": "gain2", "label": "GAIN 2", "min": 0, "max": 2, "default": 1, "step": 0.01 },
+    { "key": "gain3", "label": "GAIN 3", "min": 0, "max": 2, "default": 1, "step": 0.01 },
+    { "key": "gain4", "label": "GAIN 4", "min": 0, "max": 2, "default": 1, "step": 0.01 },
+    { "key": "pan1",  "label": "PAN 1",  "min": -1, "max": 1, "default": 0, "step": 0.01 },
+    { "key": "pan2",  "label": "PAN 2",  "min": -1, "max": 1, "default": 0, "step": 0.01 },
+    { "key": "pan3",  "label": "PAN 3",  "min": -1, "max": 1, "default": 0, "step": 0.01 },
+    { "key": "pan4",  "label": "PAN 4",  "min": -1, "max": 1, "default": 0, "step": 0.01 }
+  ],
+  "dsp": {
+    "processorName": null,
+    "nodes": [
+      { "id": "g1", "type": "gain",   "gain": 1 },
+      { "id": "g2", "type": "gain",   "gain": 1 },
+      { "id": "g3", "type": "gain",   "gain": 1 },
+      { "id": "g4", "type": "gain",   "gain": 1 },
+      { "id": "p1", "type": "panner", "pan": 0 },
+      { "id": "p2", "type": "panner", "pan": 0 },
+      { "id": "p3", "type": "panner", "pan": 0 },
+      { "id": "p4", "type": "panner", "pan": 0 },
+      { "id": "mix", "type": "mixer" }
+    ],
+    "connections": [
+      { "from": "port:in1", "to": "g1" }, { "from": "g1", "to": "p1" }, { "from": "p1", "to": "mix" },
+      { "from": "port:in2", "to": "g2" }, { "from": "g2", "to": "p2" }, { "from": "p2", "to": "mix" },
+      { "from": "port:in3", "to": "g3" }, { "from": "g3", "to": "p3" }, { "from": "p3", "to": "mix" },
+      { "from": "port:in4", "to": "g4" }, { "from": "g4", "to": "p4" }, { "from": "p4", "to": "mix" },
+      { "from": "mix", "to": "port:outL" },
+      { "from": "mix", "to": "port:outR" }
+    ]
+  },
+  "ui": {
+    "layout": "flex",
+    "themeOverride": {
+      "primary": "#ff7a00",
+      "primaryDim": "#7a3a00",
+      "bg": "#140800",
+      "bgElevated": "#1e0d2a"
+    },
+    "controls": [
+      {
+        "type": "webview",
+        "source": "web/ui.html",
+        "aspectRatio": "4/3",
+        "forwardParams": true,
+        "acceptsParamWrites": true
+      }
+    ]
+  }
+}

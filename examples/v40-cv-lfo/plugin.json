@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 4,
+  "manifest": {
+    "name": "CV LFO",
+    "version": "1.0.0",
+    "type": "fx",
+    "author": "nanoTracker SDK",
+    "description": "Utility LFO with CV OUT for modulating another plugin's AudioParam"
+  },
+  "requires": ["pedal-v4", "portsV4", "graph"],
+  "ports": {
+    "inputs": [
+      { "id": "in", "label": "IN", "kind": "audio" }
+    ],
+    "outputs": [
+      { "id": "out",  "label": "OUT", "kind": "audio" },
+      { "id": "cvOut", "label": "CV", "kind": "cv" }
+    ]
+  },
+  "parameters": [
+    { "key": "rate",  "label": "RATE",  "min": 0.1, "max": 20, "default": 2,   "step": 0.1, "unit": "Hz" },
+    { "key": "depth", "label": "DEPTH", "min": 0,   "max": 1,  "default": 0.5, "step": 0.01 }
+  ],
+  "dsp": {
+    "processorName": null,
+    "nodes": [
+      { "id": "lfo",    "type": "lfo",  "lfoShape": "sine", "lfoRate": 2, "lfoDepth": 0.5 },
+      { "id": "passthru", "type": "gain", "gain": 1 }
+    ],
+    "connections": [
+      { "from": "port:in", "to": "passthru" },
+      { "from": "passthru", "to": "port:out" },
+      { "from": "lfo",      "to": "port:cvOut" }
+    ]
+  },
+  "ui": {
+    "layout": "flex",
+    "controls": [
+      { "type": "knob", "parameter": "rate"  },
+      { "type": "knob", "parameter": "depth" }
+    ]
+  }
+}
