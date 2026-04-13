@@ -350,40 +350,109 @@ want to automate the bundling step — see the DOOM example's
 The iframe mounts with this default sandbox attribute:
 
 ```html
-<iframe sandbox="allow-scripts allow-same-origin">
+<iframe
+  sandbox="allow-scripts allow-same-origin allow-forms allow-modals
+           allow-popups allow-downloads allow-pointer-lock"
+  allow="autoplay; fullscreen; clipboard-read; clipboard-write">
 ```
+
+The token set is deliberately wide enough that ordinary HTML input
+behaviour — click, type, wheel-scroll, two-finger pan, pointer-lock,
+`confirm`/`prompt`, Save-As from an in-plugin "export" button — all
+work without any per-plugin configuration.
 
 **`allow-scripts`** — required. Without it the iframe can't run
 JavaScript at all, which defeats the point.
 
-**`allow-same-origin`** — required for most useful web APIs. Note that
-because the iframe's `src` is a `blob:` URL, `allow-same-origin` does
-**not** grant the iframe access to the tracker's DOM, cookies, or
-localStorage. Blob URLs carry their own opaque origin.
+**`allow-same-origin`** — required for most useful web APIs
+(WebAssembly, `AudioContext`, `crypto.subtle`, `IndexedDB` scoped to
+the iframe's own opaque origin). Because the iframe's `src` is a
+`blob:` URL, `allow-same-origin` does **not** grant the iframe access
+to the tracker's DOM, cookies, or localStorage — blob URLs carry
+their own opaque origin.
+
+**`allow-forms`** — lets `<input>` / `<textarea>` / `<select>`
+elements commit values and lets autofill + `<form>` submission
+fire. Text fields *partly* work without this token but several
+browsers surprise-block autocomplete and IME commit events on
+sandboxed iframes that omit it.
+
+**`allow-modals`** — allows `alert()`, `confirm()`, `prompt()`, and
+`window.print()`. Convenient for quick debugging dialogs inside
+an author's plugin UI.
+
+**`allow-popups`** — `window.open()` from a user gesture (e.g. a
+"help" link in the plugin UI) produces a real new tab instead of
+being silently blocked.
+
+**`allow-downloads`** — `<a download>` and programmatic `a.click()`
+downloads work, so an in-plugin "export preset" button saves a file
+instead of failing silently.
+
+**`allow-pointer-lock`** — `element.requestPointerLock()` succeeds.
+Needed for XY pads, oscilloscopes you drag to pan, and FPS-style
+plugins.
+
+The `allow` attribute separately grants a Permissions-Policy feature
+set (autoplay, fullscreen, clipboard read/write). Chromium gates
+these independently of the sandbox, so without the `allow` attribute
+`AudioContext.resume()` on first user gesture and `requestFullscreen()`
+both silently no-op even when the sandbox would permit them.
 
 **Extra tokens** are appended via the control's `sandbox` field:
 
 ```json
-{ "type": "webview", "source": "web/index.html", "sandbox": "allow-pointer-lock" }
+{ "type": "webview", "source": "web/index.html", "sandbox": "allow-fullscreen" }
 ```
 
 Typical extras:
 
-- `allow-pointer-lock` — for FPS-style plugins that want mouse capture
 - `allow-fullscreen` — if your plugin has a "go fullscreen" button
-- `allow-popups` — if your plugin opens a dialog in a new window
+- `allow-top-navigation` — *almost certainly a bug*; plugins should
+  not navigate the tracker page
 
 **What the iframe cannot do** (even with all sandbox tokens):
 
 - Access the parent document's DOM, cookies, or localStorage
 - Navigate the parent frame
-- Read the clipboard (without a user gesture)
 - Access cameras, microphones, or geolocation (requires a user gesture
   and the iframe's origin is opaque, so permissions don't stick)
 - Send network requests to CSP-restricted origins
 
 This is deliberate. The tracker trusts plugins less than the rest of
 the UI, even user-loaded ones.
+
+---
+
+## Input and scrolling
+
+Ordinary input works the way it does in any standalone web page —
+you don't need to opt in or post handshake messages for it:
+
+- **Clicks / touches** — delivered straight to the element under the
+  cursor inside the iframe.
+- **Text input** — `<input>`, `<textarea>`, `contenteditable`, IME
+  composition, autocomplete, and paste all work. `allow-forms` is
+  part of the default sandbox so form submission also works.
+- **Wheel / trackpad scroll** — the hosted document's `html` / `body`
+  scrolls natively, and any inner `overflow: auto` container scrolls
+  independently. If scroll seems to do nothing inside your plugin,
+  check that your hosted HTML actually has something to scroll:
+  ```css
+  html, body { height: 100%; margin: 0; }
+  body { overflow: auto; }   /* or put overflow on a specific scroller */
+  ```
+- **Keyboard** — once the iframe has focus (user clicked inside it),
+  all key events are routed to the hosted document. Tracker shortcuts
+  don't steal keys while the iframe is focused.
+- **Pointer lock** — `el.requestPointerLock()` works; the default
+  sandbox includes `allow-pointer-lock`.
+- **Drag-and-drop inside the iframe** — works (internal DnD). Dragging
+  a file from the OS *into* the iframe only works if your plugin adds
+  `dragenter`/`drop` handlers; the tracker won't intercept it.
+
+The only input that is *intentionally* disabled is when you set
+`acceptsFocus: false` on the webview control — see the next section.
 
 ---
 
