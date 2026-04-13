@@ -42,10 +42,13 @@ Two files. That's a complete plugin.
 
 Open `plugin.json` — it's about 30 lines and declares:
 
-- **`schemaVersion: 3`** — required for any plugin using webview controls
+- **`schemaVersion`** — current is `4`. Use `3` if you specifically
+  need a v3-host-only feature; the v4 host accepts every version.
 - **`manifest`** — name, version, type (`instrument` or `fx`), author
 - **`requires: ["webview-ui"]`** — capability gate; the host refuses to
-  load this plugin if it doesn't support webview controls
+  load this plugin if it doesn't support webview controls. v4 pedals
+  also require `"pedal-v4"` and `"portsV4"` —
+  see [`13-pedals.md`](13-pedals.md).
 - **`parameters`** — one dummy knob so the plugin has something to
   automate
 - **`dsp`** — a minimal silent instrument definition (required even if

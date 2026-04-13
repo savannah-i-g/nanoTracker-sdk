@@ -64,13 +64,14 @@ reads the paths it knows about.
 
 | Field | Required | Notes |
 |---|---|---|
-| `schemaVersion` | yes | 1, 2, or 3. See "Schema versions" below. |
+| `schemaVersion` | yes | 1, 2, 3, or 4. **Default to 4 for new plugins.** See "Schema versions" below. |
 | `manifest.name` | yes | Display name. Goes into `id = "plugin:<name>@<version>"`. |
 | `manifest.version` | yes | Free-form string; convention is semver. |
-| `manifest.type` | yes | `"instrument"` or `"fx"`. Decides how the loader routes the DSP block. |
+| `manifest.type` | yes | `"instrument"` or `"fx"`. From v4, `"fx"` means **pedal** (workspace floating window with patch cables) — see [`13-pedals.md`](13-pedals.md). |
 | `manifest.author` | no | Attribution — shows in plugin panels. |
 | `manifest.description` | no | One-line summary. |
 | `requires` | no | Array of capability flag strings. See "Capabilities" below. |
+| `ports` | v4 | Typed I/O port list. Required for v4 pedals. See [`14-ports.md`](14-ports.md). |
 | `parameters` | no | Array of `PluginParamDef`. See [`02-parameters.md`](02-parameters.md). |
 | `dsp` | yes | Instrument or FX DSP block. See [`04-instruments.md`](04-instruments.md) / [`05-fx-graphs.md`](05-fx-graphs.md). |
 | `ui` | no | UI control definition. See [`03-ui-controls.md`](03-ui-controls.md). |
@@ -83,9 +84,13 @@ names won't error — they'll just have no effect. Run
 
 ## Schema versions
 
-nanoTracker plugin spec versions are additive — a v3 host loads v1,
-v2, and v3 plugins interchangeably. Higher versions unlock more
-features; you pick the lowest version you actually need.
+nanoTracker plugin spec versions are additive within a major
+version — a v4 host loads v1, v2, v3, and v4 plugins
+interchangeably. v4.0 is the one breaking release: it retired the
+mixer-module FX shape (auto-migrated on project load), introduced
+typed `ports`, and brought the bidirectional webview bridge.
+**Default to v4 for new plugins** unless you specifically need to
+target a pre-v4 host.
 
 ### v1 — the original
 
@@ -147,6 +152,26 @@ Use v3 when you want a custom per-voice signal chain, need granular or
 wavetable synthesis, want to embed HTML/WASM via webview, or want your
 worklet processor to integrate cleanly with the tracker effect system.
 
+### v4 — pedals, typed ports, bidirectional webview (current)
+
+- **`type: "fx"` plugins are now pedals** — workspace floating windows
+  with patch cables, multi-port jacks, host-injected output volume,
+  bypass toggle. The legacy mixer-module FX shape is retired (existing
+  v1–v3 FX plugins auto-migrate on project load).
+- **Top-level `ports` block** (`PluginPortsDef`) for both instruments
+  and pedals — `inputs[]` / `outputs[]` with typed `kind` (`"audio"`
+  / `"sidechain"` / `"cv"` / `"gate"`). Connections reference ports
+  via `port:<id>`. See [`14-ports.md`](14-ports.md).
+- **Webview bidirectional bridge** — iframes can post `paramWrite`,
+  `presetLoad`, `noteOn`, `noteOff`, `hostCommand` back to the host.
+  Per-control `accepts*` flags + top-level `webview-writes` capability
+  gate the channel. New host→iframe `presetList` event.
+- **New capability flags:** `pedal-v4`, `portsV4`, `webview-writes`.
+
+Use v4 for any new plugin authoring. The full v4 surface is in
+[`13-pedals.md`](13-pedals.md), [`14-ports.md`](14-ports.md), and
+[`09-webview.md`](09-webview.md#bidirectional-bridge-v4).
+
 ### Choosing a version
 
 The safest strategy: pick the lowest version that supports every
@@ -154,9 +179,9 @@ feature you use, then write that version into `schemaVersion`. The
 loader uses `schemaVersion` to decide which fields to parse — v3-only
 fields are silently ignored on a v2 plugin, for example.
 
-If you're not sure: use v3 and declare capability flags explicitly.
-v3 hosts accept every earlier version anyway, so there's no downside
-to starting at the top.
+If you're not sure: **use v4** and declare capability flags
+explicitly. v4 hosts accept every earlier version anyway, so there's
+no downside to starting at the top.
 
 ## Capability flags (`requires[]`)
 
@@ -174,6 +199,10 @@ required flag is unsupported. Full list:
 | `modMatrix-v3` | v3 multi-target modulation routing |
 | `trackerEffects-v3` | tracker effect-column dispatch to plugins |
 | `webview-ui` | v3 `webview` UI control |
+| `themeOverride` | v3.5 per-plugin window theme colour override |
+| `portsV4` | v4 unified typed `ports` block |
+| `pedal-v4` | v4 `type: "fx"` plugins as workspace pedals |
+| `webview-writes` | v4 iframe→host write channel |
 
 Declaring a flag you use is **not optional** — it's the only way the
 loader knows to refuse to load your plugin on an older host that

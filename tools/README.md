@@ -45,7 +45,7 @@ echo $?  # 0 on success, 1 on failure
 
 **Pre-flight checks** (from `lib/validate.mjs`):
 
-- `schemaVersion` is present and one of 1, 2, 3
+- `schemaVersion` is present and one of 1, 2, 3, or 4
 - `manifest.name`, `manifest.version`, `manifest.type` are valid
 - Every parameter key referenced by a UI control exists in `parameters[]`
 - Every entry in `requires[]` is a known capability flag
@@ -53,6 +53,13 @@ echo $?  # 0 on success, 1 on failure
 - Every webview control's `source` path exists in the source tree
 - Every webview HTML file passes the single-file check (no sibling
   `<script src=...>`, `<link href=...>`, or relative ES-module imports)
+- **v4 pedal rules:** `type:"fx"` at v4+ requires `"pedal-v4"` and
+  non-empty `ports.inputs[]` AND `ports.outputs[]`
+- **v4 ports rules:** `ports` block requires `"portsV4"`; CV input
+  ports require `target: "<nodeId>.<paramName>"`; port ids are
+  unique within `inputs[]` / `outputs[]`
+- **v4 webview-writes:** any webview control with an `accepts*`
+  write flag set requires `"webview-writes"` in `requires[]`
 
 If any check fails, `ntpack` prints every issue with the exact field
 name and exits 1 before touching the archive. Fix, re-run.
