@@ -19,3 +19,15 @@ compressor threshold) to modulate that parameter at audio rate.
   (passes signal through unchanged)
 - `CV LFO.CV` → `FILTER.cvCutoff`
   (modulates another plugin's cutoff AudioParam)
+
+## Build + install
+
+```bash
+ntvalidate .
+ntpack . --out ../cv-lfo.ntsfx
+```
+
+Drop the resulting `.ntsfx` into PLUGIN MANAGER → `+ LOAD PLUGIN`,
+then `+ ADD TO WS`. To exercise the CV output you'll also need a
+plugin with a CV input port — see [`docs/14-ports.md`](../../docs/14-ports.md)
+for the unified port model.

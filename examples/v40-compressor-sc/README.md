@@ -17,6 +17,21 @@ ducking of a sustained pad patched through `IN`.
 
 ## Wiring example
 
-- `TrackerBus.CH01` → `COMP SC.IN`    (your pad / sustained signal)
-- `TrackerBus.CH02` → `COMP SC.SC`    (your kick drum)
+- `TRACKER BUS.CH01` → `COMP SC.IN`    (your pad / sustained signal)
+- `TRACKER BUS.CH02` → `COMP SC.SC`    (your kick drum)
 - `COMP SC.OUT` → `MASTER IN.MAIN`
+
+The SC jack renders with a dashed ring so it's visually distinct
+from a regular audio input. Cables wired into it carry the same
+audio signal as a regular IN — the distinction is intent, not
+electrical behaviour.
+
+## Build + install
+
+```bash
+ntvalidate .
+ntpack . --out ../comp-sc.ntsfx
+```
+
+Drop the resulting `.ntsfx` into PLUGIN MANAGER → `+ LOAD PLUGIN`,
+then `+ ADD TO WS`.

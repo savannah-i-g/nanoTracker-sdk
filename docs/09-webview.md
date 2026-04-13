@@ -247,16 +247,33 @@ window.addEventListener("message", (e) => {
 });
 ```
 
-**`hostCommand` whitelist.** The four commands above are the whole
-v4.0 surface. The host may ignore a command for UX reasons (e.g.
+**`hostCommand` whitelist.** The four commands above are the spec
+surface for v4.x. The host may ignore a command for UX reasons (e.g.
 `focusRequest` fails if the user has focused another window) — failures
 are silent by design. Authors should treat `hostCommand` as an
 advisory hint, not an imperative.
 
 **The `presetList` event.** The host posts the current preset catalogue
-as a `{type:"presetList", presets:[{id,name},…]}` event on mount, after
-every `presetSave`, and whenever the host reloads a project.
+as a `{type:"presetList", presets:[{id,name},…]}` event after the
+ready handshake (when the plugin authors at least one factory
+preset). v4.0 fires it once on mount; v4.1 will refire after every
+`presetSave` and on project reload.
 See [`reference/event-bus.md`](reference/event-bus.md#presetlist-v4).
+
+### v4.0 implementation status
+
+| Message | v4.0 |
+|---|---|
+| `paramWrite` | ✅ wired into the workspace; param updates take effect immediately and persist through save/load |
+| `noteOn` / `noteOff` | ✅ dispatched into the plugin's voice engine exactly as if the user played them from the tracker keyboard |
+| `presetLoad` | ✅ resolves `"preset-N"` (numeric index) or a factory preset by name and applies it to the plugin |
+| `presetList` (host→iframe) | ✅ fired once on iframe mount when the plugin has factory presets |
+| `presetSave` | ⚠️ validated and acknowledged but the host doesn't yet persist user-saved presets — reserved for v4.1 |
+| `hostCommand` | ⚠️ validated against the whitelist; the v4.0 host dispatcher is not wired so commands no-op silently — reserved for v4.1 |
+
+Plugin authors can declare `acceptsPresetWrites` / `acceptsHostCommands`
+today and the bridge stays well-typed; just don't depend on the
+presetSave/hostCommand side effects landing in v4.0.
 
 ---
 

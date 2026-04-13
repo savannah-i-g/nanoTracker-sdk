@@ -11,6 +11,41 @@ users drag patch cables between them. Pedals can have many inputs and
 many outputs — mixer pedals, splitter pedals, multi-band effects,
 cross-patched modular utilities all work out of the box.
 
+## The workspace topology
+
+Every nanoTracker project has two host-supplied pseudo-instruments
+pinned to the workspace from boot:
+
+```
+   TRACKER BUS                   your pedal               MASTER IN
+   ┌──────────────┐              ┌─────────────┐          ┌────────┐
+   │  CH01  OUT ●─┼──── cable ──→│● IN  OUT ●──┼─ cable ─→│● MAIN  │
+   │  CH02  OUT ●─┼──── cable ──→│● IN         │          │        │
+   │  CH03  OUT ●─┤              └─────────────┘          └────────┘
+   │  ...         │                                            │
+   └──────────────┘                                            ▼
+                                                          (master bus →
+                                                           speakers)
+```
+
+- **TRACKER BUS** exposes one stereo OUT jack per tracker channel,
+  carrying the live sample-playback signal. Cables from these OUTs
+  are how a pedal receives audio from the tracker.
+- **MASTER IN** is a single stereo IN jack that feeds the master
+  bus (and the master extension chain — DC blocker, retro filter,
+  bitcrush, stereo width, compressor). Cables to here are how a
+  pedal's processed audio reaches the speakers.
+- **Your pedal** sits in the middle. The user wires cables to fit
+  their patch.
+
+Both pseudo-windows are pinned: users can minimise them but not close
+them. You don't author them — they're host-supplied for every project.
+
+A pedal also has a default master route (its primary audio output
+flows through an instrument bus → master) that runs in parallel with
+any cable taps. Users can suppress the default route per-cable via
+the cable's tap/reroute toggle if they want a "wet only" patch.
+
 ---
 
 ## The shortest possible pedal
@@ -159,17 +194,20 @@ analyser / etc.:
 
 ### Gate ports
 
-Gate ports trigger something on rising edge. The host watches the
-source for crossing `0.5` and fires the plugin's gate handler — no
-explicit wiring on your side.
+Gate ports trigger something on rising edge. The cable graph watches
+the source for crossing `0.5` and fires the destination's gate
+handler.
 
 ```json
 { "id": "trig", "label": "TRIG", "kind": "gate" }
 ```
 
-Gate handlers live in worklet processors; declarative graphs can
-consume a gate by routing it as a modulation source into a trigger
-target.
+**v4.0 implementation note:** gate OUTPUT ports work directly from
+any audio source in your graph — no extra wiring. Gate INPUT ports
+need a worklet processor that registers a handler with the host;
+declarative-graph plugins should declare such inputs as
+`kind: "audio"` for v4.0 and threshold the signal inside their graph.
+See [`14-ports.md`](14-ports.md#gate) for the full status note.
 
 ---
 
@@ -177,18 +215,40 @@ target.
 
 Every pedal gets three things from the host without any authoring:
 
-### Per-audio-OUT volume knob
+### Pedal output volume knob
 
-Every `"audio"` output gets a host-injected `GainNode` and a small
-knob in the title bar. A two-output pedal has two knobs labelled with
-the port's `label`. You don't declare a "level" parameter — the host
-handles it, persists it, and restores it from the project file.
+The host injects a `GainNode` per `"audio"` output and exposes a
+single **VOL** knob in the title bar that drives every audio-output
+gain in lockstep. You don't declare a "level" parameter — the host
+handles it, persists it through save/load, and applies the same value
+to every audio OUT jack so cable taps follow the user's setting.
 
-### Bypass toggle
+For pedals specifically, the title-bar VOL is conceptually the
+"pedal output level" and attenuates **both** the default master route
+**and** any cables tapped from the pedal's audio outputs. (Workspace
+instruments follow the modular convention instead — their VOL only
+attenuates the default master route, leaving cable taps independent.)
 
-A toggle in the title bar short-circuits the first audio IN to the
-first audio OUT and silences DSP. Users get consistent bypass across
-every pedal regardless of what you built inside.
+### Bypass toggle (`BYP`)
+
+A toggle in the title bar short-circuits the pedal's first audio IN
+to its first audio OUT and silences the DSP. Implemented as two
+host-injected gain nodes:
+
+- `bypassMute` — sits between the plugin's raw output and the host
+  output gain. Default `1.0`; set to `0.0` on bypass to silence DSP.
+- `bypassDirect` — taps the first audio input straight into the host
+  output gain. Default `0.0`; set to `1.0` on bypass to open the
+  pass-through path.
+
+Both transitions ramp via `setTargetAtTime(10ms)` so toggling doesn't
+click. Bypass state persists through save/load via the workspace
+instrument snapshot's `bypass` field.
+
+You don't have to do anything to opt in — every pedal gets the
+toggle. Pedals with no audio input port get a degenerate bypass
+(DSP silenced, nothing replaces it) which is still a useful "kill
+switch" for utility pedals.
 
 ### Drag / resize / minimise / theme override
 
@@ -201,13 +261,22 @@ on theme changes.
 ## Automation
 
 FxPattern automation (the existing mixer automation lane) targets
-pedals by `workspaceId` + `paramKey`. You don't declare anything — the
-mixer's automation editor lists every pedal parameter automatically.
-Row-level writes apply via `setTargetAtTime(0.02s)` for smooth ramps.
+pedals by `workspaceId` + `paramKey`. The mixer's automation editor
+gains a **PEDAL** target mode (next to **MIXER**) that lists every
+workspace pedal and its parameters; selecting one writes a cell with
+`pedalTarget: { workspaceId, paramKey }`. You don't declare
+anything — every pedal parameter shows up automatically. Row-level
+writes apply via `setTargetAtTime(0.02s)` for smooth ramps.
 
 Tracker effect-column dispatch also reaches pedals via
 `"trackerEffects-v3"` (same as instruments). Webview pedals opting in
 via `forwardEffects: true` receive raw effect bytes in the iframe.
+
+Webview pedals can additionally drive their own parameters from
+inside the iframe via the v4 `paramWrite` channel — useful for
+custom UIs (faders, XY pads, step sequencers) that are easier to
+build in HTML than as native UI controls.
+See [`09-webview.md`](09-webview.md#bidirectional-bridge-v4).
 
 ---
 
@@ -245,8 +314,9 @@ Mono IN, stereo OUT with a width knob:
 ```
 
 Each input goes through its own gain + pan into the summing mixer.
-Users drag four cables in; the pedal's built-in per-OUT knobs set
-master L/R. See [`examples/v40-mixer-pedal/`](../examples/v40-mixer-pedal/)
+Users drag four cables in; the pedal's title-bar VOL knob attenuates
+both stereo outputs in lockstep. See
+[`examples/v40-mixer-pedal/`](../examples/v40-mixer-pedal/)
 for the full worked example with a webview fader strip.
 
 ### Compressor with sidechain

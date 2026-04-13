@@ -1,11 +1,16 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 4,
   "manifest": {
     "name": "MY DELAY",
     "version": "0.1.0",
     "type": "fx",
     "author": "you",
-    "description": "Minimal feedback-delay FX starter — no AudioWorklet, pure declarative graph"
+    "description": "Minimal feedback-delay pedal — pure declarative graph, mono in / mono out"
+  },
+  "requires": ["pedal-v4", "portsV4", "graph"],
+  "ports": {
+    "inputs":  [{ "id": "in",  "label": "IN",  "kind": "audio" }],
+    "outputs": [{ "id": "out", "label": "OUT", "kind": "audio" }]
   },
   "parameters": [
     { "key": "d1.delayTime", "label": "TIME",     "min": 0.01, "max": 1.5, "default": 0.375, "step": 0.01, "unit": "s", "displayDecimals": 2 },
@@ -24,16 +29,16 @@
       { "id": "lpf", "type": "biquad","filterType": "lowpass", "frequency": 6000, "Q": 0.707 }
     ],
     "connections": [
-      { "from": "input", "to": "dry" },
-      { "from": "dry",   "to": "output" },
+      { "from": "port:in", "to": "dry" },
+      { "from": "dry",     "to": "port:out" },
 
-      { "from": "input", "to": "d1" },
-      { "from": "d1",    "to": "lpf" },
-      { "from": "lpf",   "to": "fb" },
-      { "from": "fb",    "to": "d1" },
+      { "from": "port:in", "to": "d1" },
+      { "from": "d1",      "to": "lpf" },
+      { "from": "lpf",     "to": "fb" },
+      { "from": "fb",      "to": "d1" },
 
-      { "from": "lpf",   "to": "wet" },
-      { "from": "wet",   "to": "output" }
+      { "from": "lpf",     "to": "wet" },
+      { "from": "wet",     "to": "port:out" }
     ]
   },
   "ui": {

@@ -148,9 +148,10 @@ missing `"portsV4"`.
 
 Required for every `type: "fx"` plugin authored against v4.0 or later.
 Marks the plugin as a workspace pedal — rendered in a floating
-`TrackerWindow` with patch cables, host-injected per-OUT volume knobs,
-and a bypass toggle. Pedals must also declare `ports` and therefore
-`portsV4`; the loader rejects pedals missing either.
+`TrackerWindow` with patch cables, a host-injected output VOL knob
+(drives every audio OUT gain in lockstep), and a bypass toggle.
+Pedals must also declare `ports` and therefore `portsV4`; the loader
+rejects pedals missing either.
 
 Legacy `type: "fx"` plugins targeting the v1–v3 TrackerFxMixer module
 slot are **no longer accepted**. Projects that previously used them

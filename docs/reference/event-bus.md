@@ -263,9 +263,11 @@ chrome does.
 
 ### `presetList` (v4)
 
-Fires when the plugin's preset catalogue changes — on mount, after a
-`presetSave` write, or when the host loads a new project. Lets the
-iframe render its own preset browser without polling.
+Fires once on iframe mount with the plugin's factory preset
+catalogue (when the plugin authors at least one). Lets the iframe
+render its own preset browser without polling. v4.0 fires the
+event on mount only; v4.1 will additionally refire after `presetSave`
+writes and on project reload.
 
 ```json
 {

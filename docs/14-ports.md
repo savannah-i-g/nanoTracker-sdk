@@ -109,9 +109,9 @@ expose the gain node's `gain` AudioParam via the CV port's `target`.
 
 ### `gate`
 
-Boolean trigger. The host watches the incoming signal for threshold
-crossings at `0.5` and fires the plugin's gate handler on rising and
-falling edges.
+Boolean trigger. The cable graph watches the incoming signal for
+threshold crossings at `0.5` and fires the destination plugin's
+gate handler on rising and falling edges.
 
 **Visual:** dotted jack ring, gate accent colour. Cable body: dotted
 line.
@@ -120,15 +120,17 @@ line.
 trigger", drum-machine-style trigger buses, arpeggiator step-advance
 inputs.
 
-**Semantics:** the host calls an internal `gateHandler(on, atTime)`
-callback on the plugin's voice engine on each edge. For worklet
-plugins, a corresponding `gate` message arrives on the worklet port.
-Declarative-graph plugins can consume the gate via a
-`modRoutes[].source` pointing at the port:
+**v4.0 implementation status:**
 
-```json
-{ "source": "port:trig", "targets": [{ "target": "env.gate", "depth": 1 }] }
-```
+- **Gate OUTPUT** ports work end-to-end in v4.0. Declarative graphs
+  expose any audio source as `kind: "gate"` and the cable graph
+  handles edge detection at the destination side.
+- **Gate INPUT** ports require a worklet processor that registers a
+  gate handler — declarative-graph plugins cannot consume gate
+  inputs directly in v4.0. Workaround: declare the input as
+  `kind: "audio"` and threshold inside your graph (e.g. with a
+  waveshaper + envelope follower). Native gate-input handling for
+  declarative graphs is reserved for v4.1.
 
 ---
 
@@ -167,6 +169,29 @@ Legacy shortcut names still work:
 - `"output"` — first audio output
 - `"voiceIn"` / `"voiceOut"` — per-voice input/output (instrument
   graphs only; unaffected by port renaming)
+
+---
+
+## Visual reference
+
+The host gives each port kind a distinct look so users can scan
+routing at a glance. Both jack rings and the cable bodies follow the
+same key:
+
+| Kind | Jack ring | Cable body | Colour token |
+|---|---|---|---|
+| `audio` | solid ring | solid line | `--color-primary` (out) / `--workspace-input-jack` (in) |
+| `sidechain` | dashed ring | dashed line `10 5` | same as audio |
+| `cv` | solid ring, accent fill | solid line | `--color-primary-glow` |
+| `gate` | dotted ring | dotted line `2 4` | `--color-text` |
+
+The cable body's tap/reroute mode still drives its base colour
+(`settings.colour` / `settings.rerouteColour`); the kind only adds
+the dash pattern and the optional accent hue.
+
+Plugin-supplied `ui.themeOverride` cascades to these colours via CSS
+custom properties, so a pedal with a custom palette gets matching
+jacks + cables.
 
 ---
 

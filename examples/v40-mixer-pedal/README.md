@@ -21,16 +21,23 @@ controlled from an interactive webview fader strip.
 
 ## Wiring
 
-Drag cables from `TrackerBus.CH01` → `4CH MIXER.1`,
-`TrackerBus.CH02` → `4CH MIXER.2`, etc. Then wire `4CH MIXER.L` and
+Drag cables from `TRACKER BUS.CH01` → `4CH MIXER.1`,
+`TRACKER BUS.CH02` → `4CH MIXER.2`, etc. Then wire `4CH MIXER.L` and
 `4CH MIXER.R` to `MASTER IN.MAIN`. Every channel you route is now
-mixable from the webview faders.
+mixable from the webview faders. Workspace-instrument synths can also
+patch directly into the inputs (their OUT jacks are independent of
+their title-bar VOL knob — modular convention).
+
+See [`docs/13-pedals.md#the-workspace-topology`](../../docs/13-pedals.md#the-workspace-topology)
+for the full pseudo-instrument layout.
 
 ## Build + install
 
 ```bash
 ntvalidate .
-ntpack . ../4ch-mixer.ntins
+ntpack . --out ../4ch-mixer.ntsfx
 ```
 
-Drop the resulting `.ntins` into the tracker's plugin loader.
+Drop the resulting `.ntsfx` into the tracker's PLUGIN MANAGER →
+`+ LOAD PLUGIN`, then click **+ ADD TO WS** to spawn a pedal window
+in the workspace.
