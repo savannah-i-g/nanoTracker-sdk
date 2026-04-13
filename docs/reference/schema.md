@@ -359,13 +359,22 @@ Which fields apply to which node type:
 
 ```ts
 {
-  from:          string,    // node id or "input"
-  to:            string,    // node id or "output"
+  from:          string,    // node id, "input", "instrumentIn", or "port:<id>" (v4)
+  to:            string,    // node id, "output", or "port:<id>" (v4)
   toParam?:      string,    // v2: target AudioParam instead of input
   outputIndex?:  number,    // v2: ChannelSplitterNode output channel
   inputIndex?:   number,    // v2: ChannelMergerNode input channel
 }
 ```
+
+**v4 port references.** When the plugin declares a top-level
+`ports` block, connections may name any manifest port via
+`"port:<id>"` where `<id>` matches an entry in `ports.inputs[].id`
+or `ports.outputs[].id`. The host creates one shared GainNode per
+referenced port id and resolves the connection through it. Legacy
+shortcuts `"instrumentIn"` (first audio input) and `"output"`
+(first audio output) continue to work alongside `port:<id>`. See
+[`../14-ports.md`](../14-ports.md) for the full reference.
 
 ---
 

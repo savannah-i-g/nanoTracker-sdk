@@ -102,9 +102,17 @@ the voice-lifecycle machinery**:
 |---|---|
 | `"voiceIn"` | Per-voice input (rarely used; present for feedback topologies that need a voice-local input point) |
 | `"voiceOut"` | Per-voice output. Everything that should reach the instrument bus connects TO this. |
+| `"output"` | Engine-level output mix node (shared scope). Equivalent to `"port:<first audio out id>"` for v4 plugins. |
+| `"instrumentIn"` | Legacy single audio input jack (shared scope). Equivalent to `"port:<first audio in id>"` for v4 plugins. |
+| `"port:<id>"` | <sup>v4</sup> Manifest-declared multi-port jack reference. The `<id>` matches an entry in `ports.inputs[]` / `ports.outputs[]`. Use these when your plugin has more than one audio input or output. See [`14-ports.md`](14-ports.md). |
 
 You can override the names via `voiceInput` / `voiceOutput` fields
 on `PluginInstrumentDsp` but there's almost never a reason to.
+
+For v4 multi-port plugins the host creates one `GainNode` per
+referenced `port:<id>` automatically — only ports that appear in
+the connections list get a node, so unreferenced manifest ports
+cost no audio-graph state.
 
 ### Reserved modulation sources
 
