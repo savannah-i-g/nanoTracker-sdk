@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 4,
+  "manifest": {
+    "name": "WEBVIEW RACK",
+    "version": "1.0.0",
+    "type": "fx",
+    "author": "nanoTracker SDK",
+    "description": "Three LFO sub-modules inside one pedal window. The webview decides which LFOs expose workspace jacks via subPortsUpdate — a minimal demonstration of v4.1 webview-exposable ports."
+  },
+  "requires": ["pedal-v4", "portsV4", "graph", "webview-ui", "webview-writes", "webview-ports"],
+  "ports": {
+    "inputs": [
+      { "id": "in", "label": "IN", "kind": "audio" }
+    ],
+    "outputs": [
+      { "id": "out", "label": "OUT", "kind": "audio" }
+    ],
+    "webviewExposable": [
+      { "id": "lfo1.out",  "label": "LFO1",      "kind": "cv", "direction": "out", "source": "lfo1",  "defaultVisible": false },
+      { "id": "lfo2.out",  "label": "LFO2",      "kind": "cv", "direction": "out", "source": "lfo2",  "defaultVisible": false },
+      { "id": "lfo3.out",  "label": "LFO3",      "kind": "cv", "direction": "out", "source": "lfo3",  "defaultVisible": false },
+      { "id": "lfo1.rate", "label": "LFO1 RATE", "kind": "cv", "direction": "in",  "target": "lfo1.frequency", "defaultVisible": false },
+      { "id": "lfo2.rate", "label": "LFO2 RATE", "kind": "cv", "direction": "in",  "target": "lfo2.frequency", "defaultVisible": false },
+      { "id": "lfo3.rate", "label": "LFO3 RATE", "kind": "cv", "direction": "in",  "target": "lfo3.frequency", "defaultVisible": false }
+    ]
+  },
+  "parameters": [
+    { "key": "rate1",  "label": "RATE 1",  "min": 0.1, "max": 20, "default": 1.0, "step": 0.1, "unit": "Hz" },
+    { "key": "rate2",  "label": "RATE 2",  "min": 0.1, "max": 20, "default": 2.0, "step": 0.1, "unit": "Hz" },
+    { "key": "rate3",  "label": "RATE 3",  "min": 0.1, "max": 20, "default": 4.0, "step": 0.1, "unit": "Hz" },
+    { "key": "depth1", "label": "DEPTH 1", "min": 0, "max": 1, "default": 0.5, "step": 0.01 },
+    { "key": "depth2", "label": "DEPTH 2", "min": 0, "max": 1, "default": 0.5, "step": 0.01 },
+    { "key": "depth3", "label": "DEPTH 3", "min": 0, "max": 1, "default": 0.5, "step": 0.01 }
+  ],
+  "dsp": {
+    "processorName": null,
+    "nodes": [
+      { "id": "lfo1",     "type": "lfo",  "lfoShape": "sine",     "lfoRate": 1, "lfoDepth": 0.5 },
+      { "id": "lfo2",     "type": "lfo",  "lfoShape": "triangle", "lfoRate": 2, "lfoDepth": 0.5 },
+      { "id": "lfo3",     "type": "lfo",  "lfoShape": "square",   "lfoRate": 4, "lfoDepth": 0.5 },
+      { "id": "passthru", "type": "gain", "gain": 1 }
+    ],
+    "connections": [
+      { "from": "port:in",  "to": "passthru" },
+      { "from": "passthru", "to": "port:out" },
+      { "from": "lfo1", "to": "port:lfo1.out" },
+      { "from": "lfo2", "to": "port:lfo2.out" },
+      { "from": "lfo3", "to": "port:lfo3.out" }
+    ],
+    "modRoutes": [
+      { "source": "rate1",  "target": "lfo1.frequency" },
+      { "source": "rate2",  "target": "lfo2.frequency" },
+      { "source": "rate3",  "target": "lfo3.frequency" },
+      { "source": "depth1", "target": "lfo1.gain" },
+      { "source": "depth2", "target": "lfo2.gain" },
+      { "source": "depth3", "target": "lfo3.gain" }
+    ]
+  },
+  "ui": {
+    "layout": "flex",
+    "minWidth": 320,
+    "controls": [
+      {
+        "type": "webview",
+        "source": "web/ui.html",
+        "aspectRatio": "4/3",
+        "acceptsParamWrites": true
+      }
+    ]
+  }
+}

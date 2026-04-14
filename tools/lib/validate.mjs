@@ -340,6 +340,11 @@ export async function preflightPlugin(pluginJson, sourceDir) {
     "portsV4",
     "pedal-v4",
     "webview-writes",
+    // v4.1
+    "webview-ports",
+    // v3.6
+    "midi-cc",
+    "consumes-song-position",
   ]);
   if (Array.isArray(pluginJson.requires)) {
     for (const cap of pluginJson.requires) {

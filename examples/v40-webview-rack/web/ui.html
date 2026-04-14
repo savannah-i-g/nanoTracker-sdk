@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'" />
+  <title>WEBVIEW RACK</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg:  #0a0a0a;
+      --fg:  #ddd;
+      --dim: #888;
+      --acc: #ff6600;
+      --bord:#333;
+    }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: var(--bg); color: var(--fg);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+      padding: 10px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    h1 {
+      margin: 0; font-size: 10px; letter-spacing: 2px;
+      color: var(--dim); font-weight: normal;
+    }
+    .module {
+      border: 1px solid var(--bord); padding: 8px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .module label { color: var(--dim); width: 48px; }
+    .module input[type="range"] { flex: 1; accent-color: var(--acc); }
+    .module .val { color: var(--acc); width: 42px; text-align: right; }
+    .jack-row {
+      display: flex; gap: 6px; margin-top: 4px;
+    }
+    .jack-btn {
+      background: transparent; color: var(--fg);
+      border: 1px solid var(--bord); padding: 2px 8px;
+      cursor: pointer; font: inherit; letter-spacing: 0.5px;
+    }
+    .jack-btn.on { background: var(--acc); color: var(--bg); border-color: var(--acc); }
+    .help { color: var(--dim); font-size: 10px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <h1>LFO RACK · WEBVIEW PORTS DEMO</h1>
+
+  <div id="rack"></div>
+
+  <p class="help">
+    Toggle a jack to expose that LFO's CV in/out on the plugin window.
+    Cable from there to another plugin's parameter.
+  </p>
+
+<script>
+(function () {
+  "use strict";
+
+  const LFOS = [
+    { idx: 1, rateKey: "rate1", depthKey: "depth1", outId: "lfo1.out", rateInId: "lfo1.rate" },
+    { idx: 2, rateKey: "rate2", depthKey: "depth2", outId: "lfo2.out", rateInId: "lfo2.rate" },
+    { idx: 3, rateKey: "rate3", depthKey: "depth3", outId: "lfo3.out", rateInId: "lfo3.rate" },
+  ];
+
+  // Local mirror of parameter values. Initialised from the host's `param`
+  // messages and written back via postMessage({type:"paramWrite"}).
+  const values = {};
+
+  // Local mirror of which webview-exposable ports are currently shown.
+  const visible = new Set();
+
+  function post(msg) {
+    window.parent.postMessage(msg, "*");
+  }
+
+  function sendVisible() {
+    post({
+      type: "subPortsUpdate",
+      visible: [...visible].map(id => ({ id })),
+    });
+  }
+
+  function buildModule(lfo) {
+    const wrap = document.createElement("div");
+    wrap.className = "module";
+
+    const nameLabel = document.createElement("label");
+    nameLabel.textContent = "LFO" + lfo.idx;
+
+    const rateIn = document.createElement("input");
+    rateIn.type = "range";
+    rateIn.min = "0.1"; rateIn.max = "20"; rateIn.step = "0.1";
+    rateIn.value = String(values[lfo.rateKey] ?? 1);
+
+    const rateVal = document.createElement("span");
+    rateVal.className = "val";
+    rateVal.textContent = Number(rateIn.value).toFixed(1) + "Hz";
+
+    rateIn.addEventListener("input", () => {
+      const v = Number(rateIn.value);
+      values[lfo.rateKey] = v;
+      rateVal.textContent = v.toFixed(1) + "Hz";
+      post({ type: "paramWrite", key: lfo.rateKey, value: v });
+    });
+
+    const jackRow = document.createElement("div");
+    jackRow.className = "jack-row";
+
+    function jackButton(label, portId) {
+      const btn = document.createElement("button");
+      btn.className = "jack-btn";
+      btn.textContent = label;
+      btn.dataset.portId = portId;
+      btn.addEventListener("click", () => {
+        if (visible.has(portId)) visible.delete(portId);
+        else                      visible.add(portId);
+        btn.classList.toggle("on", visible.has(portId));
+        sendVisible();
+      });
+      return btn;
+    }
+    jackRow.appendChild(jackButton("CV OUT", lfo.outId));
+    jackRow.appendChild(jackButton("RATE IN", lfo.rateInId));
+
+    wrap.appendChild(nameLabel);
+    wrap.appendChild(rateIn);
+    wrap.appendChild(rateVal);
+
+    const outer = document.createElement("div");
+    outer.appendChild(wrap);
+    outer.appendChild(jackRow);
+    return outer;
+  }
+
+  const rack = document.getElementById("rack");
+  for (const lfo of LFOS) rack.appendChild(buildModule(lfo));
+
+  // Host → iframe messages.
+  window.addEventListener("message", (e) => {
+    const msg = e.data;
+    if (!msg || typeof msg !== "object") return;
+    switch (msg.type) {
+      case "param":
+        values[msg.key] = msg.value;
+        break;
+      case "subPortsAvailable":
+        // The host tells us which ids we may reference. We don't need to
+        // do anything with the list here — the buttons are authored with
+        // matching ids in `LFOS` — but in a real plugin you'd render the
+        // jack-buttons dynamically from this list so a manifest update
+        // surfaces new LFOs without re-authoring the UI.
+        break;
+      case "__nt_error":
+        console.warn("[webview-rack]", msg.where, msg.message);
+        break;
+    }
+  });
+
+  // Announce readiness so the host flushes any queued messages
+  // (param, subPortsAvailable, presetList) into this iframe.
+  post({ type: "__nt_ready" });
+})();
+</script>
+</body>
+</html>
