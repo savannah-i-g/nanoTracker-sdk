@@ -328,6 +328,33 @@ Requires `"wavetable"` in `requires[]`.
 Both nodes behave as audio sources — connect their output downstream
 in your graph the same way you'd use a built-in `oscillator` node.
 
+### `sampler` (v4.1)
+
+The unified sampler primitive — covers multi-sample kits, breakbeat
+choppers, and single-sample pitched synths behind one declarative
+shape. See [`16-sampler-node.md`](16-sampler-node.md) for the full
+authoring guide.
+
+```jsonc
+{
+  "id": "smp",
+  "type": "sampler",
+  "zones": [ /* PluginSampleZone[] */ ],
+  "sliceMap": { "source": "samples/break.wav", "autoDetect": "grid:16" },
+  "polyphony": 16,
+  "samplerVoiceStealing": "oldest"
+}
+```
+
+Exposes a single stereo audio output. Zones and a slice map can
+coexist on the same node — both fire on each incoming note. The
+runtime owns per-voice `AudioBufferSourceNode` playback and shared
+state (round-robin counters, choke groups) across every voice in
+the plugin.
+
+Requires `"sampler-v41"` in `requires[]`. Adding a `sliceMap`
+additionally requires `"sliceMap-v41"`.
+
 ## Worklet nodes as graph nodes
 
 Any `worklet`-type node in your graph has its processor

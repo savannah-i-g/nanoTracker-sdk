@@ -324,6 +324,226 @@ export async function preflightPlugin(pluginJson, sourceDir) {
     issues.push(`a webview control opts in to write-channel flags (${WRITE_FLAG_KEYS.join("/")}) but "webview-writes" is missing from requires[]`);
   }
 
+  // ── v4.1 sampler / sliceMap / sampleMeta (Phase A) ─────────
+  //
+  // These rules mirror the host-side gating in pluginLoader.ts so
+  // packing catches capability omissions before the plugin reaches a
+  // user's tracker install. Scans every place a sample zone might
+  // live: instrument-level dsp.samples[], any sampler-node zones[],
+  // and sampler-node sliceMap metadata.
+  {
+    const V41_LOOP_MODES = new Set(["none", "forward", "pingpong", "release"]);
+    const zoneFeatures = { needSampler: false, needSampleMeta: false, reasons: [] };
+
+    const auditZone = (z, where) => {
+      if (!z || typeof z !== "object") return;
+      // Loop mode string form (v4.1) triggers sampler-v41; boolean form
+      // (v1 legacy) does not.
+      if (typeof z.loop === "string") {
+        if (!V41_LOOP_MODES.has(z.loop)) {
+          issues.push(`${where}.loop must be one of ${[...V41_LOOP_MODES].join(", ")} (got ${JSON.stringify(z.loop)})`);
+        }
+        if (z.loop === "pingpong" || z.loop === "release") {
+          zoneFeatures.needSampler = true;
+          zoneFeatures.reasons.push(`${where}.loop === "${z.loop}"`);
+        }
+      }
+      if (typeof z.loopCrossfade === "number") {
+        if (z.loopCrossfade < 0) {
+          issues.push(`${where}.loopCrossfade must be >= 0`);
+        }
+        zoneFeatures.needSampler = true;
+        zoneFeatures.reasons.push(`${where}.loopCrossfade is set`);
+      }
+      if (typeof z.roundRobinGroup === "string" || typeof z.choke === "string" ||
+          z.trigger === "release" || z.pitchTracking === false) {
+        zoneFeatures.needSampler = true;
+        zoneFeatures.reasons.push(`${where} uses a v4.1 zone feature`);
+      }
+      if (z.trigger !== undefined && z.trigger !== "attack" && z.trigger !== "release") {
+        issues.push(`${where}.trigger must be "attack" or "release" (got ${JSON.stringify(z.trigger)})`);
+      }
+      if (z.meta && typeof z.meta === "object" && (
+        z.meta.originalTempo !== undefined ||
+        z.meta.originalKey   !== undefined ||
+        (Array.isArray(z.meta.cuePoints) && z.meta.cuePoints.length > 0)
+      )) {
+        zoneFeatures.needSampleMeta = true;
+      }
+    };
+
+    const walkNodes = (nodes, where) => {
+      if (!Array.isArray(nodes)) return;
+      for (const [i, n] of nodes.entries()) {
+        if (!n || typeof n !== "object") continue;
+        if (n.type !== "sampler") continue;
+        zoneFeatures.needSampler = true;
+        zoneFeatures.reasons.push(`${where}[${i}] is type:"sampler"`);
+        if (!Array.isArray(n.zones) && !n.sliceMap) {
+          issues.push(`${where}[${i}] (sampler node "${n.id ?? "?"}"): must declare at least one of zones[] or sliceMap`);
+        }
+        if (Array.isArray(n.zones)) {
+          n.zones.forEach((z, j) => auditZone(z, `${where}[${i}].zones[${j}]`));
+        }
+        if (n.sliceMap) {
+          if (!requires.includes("sliceMap-v41")) {
+            issues.push(`${where}[${i}].sliceMap is set but "sliceMap-v41" is missing from requires[]`);
+          }
+          if (typeof n.sliceMap.source !== "string" || !n.sliceMap.source.trim()) {
+            issues.push(`${where}[${i}].sliceMap.source is required (non-empty string)`);
+          }
+          if (Array.isArray(n.sliceMap.slices)) {
+            n.sliceMap.slices.forEach((s, k) => {
+              if (!s || typeof s !== "object") {
+                issues.push(`${where}[${i}].sliceMap.slices[${k}] must be an object`);
+                return;
+              }
+              if (typeof s.start !== "number" || typeof s.end !== "number" || !(s.end > s.start)) {
+                issues.push(`${where}[${i}].sliceMap.slices[${k}] must have start/end numbers with end > start`);
+              }
+            });
+          }
+          if (n.sliceMap.autoDetect !== undefined && n.sliceMap.autoDetect !== null) {
+            const ad = n.sliceMap.autoDetect;
+            const ok = ad === "markers" || ad === "transients" || (typeof ad === "string" && /^grid:\d+$/.test(ad));
+            if (!ok) {
+              issues.push(`${where}[${i}].sliceMap.autoDetect must be "markers" | "transients" | "grid:<N>" (got ${JSON.stringify(ad)})`);
+            }
+          }
+        }
+        if (n.polyphony !== undefined && (typeof n.polyphony !== "number" || n.polyphony < 1 || n.polyphony > 64)) {
+          issues.push(`${where}[${i}].polyphony must be an integer in 1..64`);
+        }
+      }
+    };
+
+    // Instrument-level samples[]
+    const dsp = pluginJson.dsp;
+    if (dsp && Array.isArray(dsp.samples)) {
+      dsp.samples.forEach((z, i) => auditZone(z, `dsp.samples[${i}]`));
+    }
+    // FX form: dsp.nodes[]
+    if (dsp && Array.isArray(dsp.nodes)) walkNodes(dsp.nodes, "dsp.nodes");
+    // Instrument form: dsp.graph.nodes[]
+    if (dsp && dsp.graph && Array.isArray(dsp.graph.nodes)) walkNodes(dsp.graph.nodes, "dsp.graph.nodes");
+
+    if (zoneFeatures.needSampler && !requires.includes("sampler-v41")) {
+      issues.push(
+        `plugin uses v4.1 sampler features (${zoneFeatures.reasons[0]}) but "sampler-v41" is missing from requires[]`,
+      );
+    }
+    if (zoneFeatures.needSampleMeta && !requires.includes("sampleMeta-v41")) {
+      issues.push(
+        `plugin authors zone.meta (tempo/key/cuePoints) but "sampleMeta-v41" is missing from requires[]`,
+      );
+    }
+
+    // ── v4.1 Phase B: userSamples rules ─────────────────────────
+    let needUserSamples = false;
+    const seenSlotIds = new Map(); // slotId → where
+    const auditUserZone = (z, where) => {
+      if (!z || typeof z !== "object") return;
+      if (z.userAssignable === true) {
+        needUserSamples = true;
+        if (typeof z.slotId !== "string" || !z.slotId.trim()) {
+          issues.push(`${where}.userAssignable is true but slotId is missing (required, non-empty string)`);
+          return;
+        }
+        const prev = seenSlotIds.get(z.slotId);
+        if (prev) {
+          issues.push(`slotId "${z.slotId}" is declared on both ${prev} and ${where} — must be unique within the plugin`);
+        } else {
+          seenSlotIds.set(z.slotId, where);
+        }
+        if (z.fallbackFile !== undefined && typeof z.fallbackFile !== "string") {
+          issues.push(`${where}.fallbackFile must be a string (archive-relative path)`);
+        }
+        if (z.maxDurationSec !== undefined &&
+            (typeof z.maxDurationSec !== "number" || z.maxDurationSec < 0)) {
+          issues.push(`${where}.maxDurationSec must be a non-negative number`);
+        }
+        if (z.accept !== undefined) {
+          if (!Array.isArray(z.accept) || !z.accept.every(s => typeof s === "string")) {
+            issues.push(`${where}.accept must be an array of MIME strings`);
+          }
+        }
+      }
+    };
+    if (dsp && Array.isArray(dsp.samples)) {
+      dsp.samples.forEach((z, i) => auditUserZone(z, `dsp.samples[${i}]`));
+    }
+    const walkUserZones = (nodes, where) => {
+      if (!Array.isArray(nodes)) return;
+      for (const [i, n] of nodes.entries()) {
+        if (n?.type !== "sampler") continue;
+        if (Array.isArray(n.zones)) {
+          n.zones.forEach((z, j) => auditUserZone(z, `${where}[${i}].zones[${j}]`));
+        }
+      }
+    };
+    if (dsp && Array.isArray(dsp.nodes))           walkUserZones(dsp.nodes,      "dsp.nodes");
+    if (dsp?.graph && Array.isArray(dsp.graph.nodes)) walkUserZones(dsp.graph.nodes, "dsp.graph.nodes");
+    const sampleBank = pluginJson.sampleBank;
+    if (sampleBank !== undefined && sampleBank !== null) {
+      needUserSamples = true;
+      if (typeof sampleBank !== "object" || Array.isArray(sampleBank)) {
+        issues.push(`sampleBank must be an object`);
+      } else {
+        if (sampleBank.userSlotCount !== undefined &&
+            (typeof sampleBank.userSlotCount !== "number" || sampleBank.userSlotCount < 0)) {
+          issues.push(`sampleBank.userSlotCount must be a non-negative integer`);
+        }
+        if (sampleBank.allowUserSwap !== undefined && typeof sampleBank.allowUserSwap !== "boolean") {
+          issues.push(`sampleBank.allowUserSwap must be a boolean`);
+        }
+        const pc = sampleBank.presetsCarrySamples;
+        if (pc !== undefined && pc !== "never" && pc !== "optional" && pc !== "always") {
+          issues.push(`sampleBank.presetsCarrySamples must be "never" | "optional" | "always"`);
+        }
+      }
+    }
+    if (needUserSamples && !requires.includes("userSamples")) {
+      issues.push(`plugin uses v4.1 user-sample features (userAssignable zones or sampleBank) but "userSamples" is missing from requires[]`);
+    }
+
+    // ── v4.1 Phase C: preset sampleAssignments + presetBank-v4 ──
+    //
+    // A factory preset may declare `sampleAssignments: { slotId: file }`
+    // to ship a "full kit" (parameter values + which WAV goes in which
+    // user slot). Both sides of that mapping must validate: keys have
+    // to match declared slotIds, values have to reference files that
+    // exist in the archive. The capability `presetBank-v4` gates
+    // author-side preset features that reach beyond parameter-only
+    // factory presets — currently just sampleAssignments.
+    if (Array.isArray(pluginJson.presets)) {
+      let needPresetBank = false;
+      for (const [i, p] of pluginJson.presets.entries()) {
+        if (!p || typeof p !== "object") continue;
+        const assignments = p.sampleAssignments;
+        if (assignments === undefined) continue;
+        needPresetBank = true;
+        if (typeof assignments !== "object" || Array.isArray(assignments)) {
+          issues.push(`presets[${i}].sampleAssignments must be an object`);
+          continue;
+        }
+        for (const [slotId, file] of Object.entries(assignments)) {
+          if (typeof file !== "string" || !file.trim()) {
+            issues.push(`presets[${i}].sampleAssignments["${slotId}"] must be a non-empty string path`);
+          }
+          if (!seenSlotIds.has(slotId)) {
+            issues.push(`presets[${i}].sampleAssignments references unknown slotId "${slotId}" — not declared by any userAssignable zone`);
+          }
+        }
+      }
+      if (needPresetBank && !requires.includes("presetBank-v4")) {
+        issues.push(`presets[] declares sampleAssignments but "presetBank-v4" is missing from requires[]`);
+      }
+      if (needPresetBank && !requires.includes("userSamples")) {
+        issues.push(`presets[] declares sampleAssignments but "userSamples" is missing from requires[] (sample assignments need a user-slot system)`);
+      }
+    }
+  }
+
   // ── requires[] capability sanity ───────────────────────────
   // The set below is the current nanoTracker host capability list.
   // When a new flag ships, update this set and docs/reference/host-capabilities.md.
@@ -342,6 +562,14 @@ export async function preflightPlugin(pluginJson, sourceDir) {
     "webview-writes",
     // v4.1
     "webview-ports",
+    // v4.1 Phase A — unified sampler primitive
+    "sampler-v41",
+    "sliceMap-v41",
+    "sampleMeta-v41",
+    // v4.1 Phase B — user-assignable sample slots
+    "userSamples",
+    // v4.1 Phase C — user preset persistence (library + project scope)
+    "presetBank-v4",
     // v3.6
     "midi-cc",
     "consumes-song-position",

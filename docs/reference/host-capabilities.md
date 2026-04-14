@@ -23,6 +23,14 @@ Instrument plugins can **also** declare capabilities under
 | `portsV4` | v4.0 | unified typed `ports` block on any plugin (`PluginPortsDef`). |
 | `pedal-v4` | v4.0 | `type: "fx"` plugins as workspace pedals (floating window, patch cables, multi-port). |
 | `webview-writes` | v4.0 | iframe→host write channel (`paramWrite` / `presetLoad` / `presetSave` / `noteOn` / `noteOff` / `hostCommand`). |
+| `midi-cc` | v3.6 | raw MIDI CC forwarding to a plugin's webview iframe (non-parameter CC handling). See [`../09-webview.md`](../09-webview.md). |
+| `consumes-song-position` | v3.6 | plugin opts into host → iframe / worklet `songPosition` transport messages. See [`../09-webview.md`](../09-webview.md). |
+| `webview-ports` | v4.1 | webview-exposable patch-cable ports declared in `ports.webviewExposable[]`. See [`../15-webview-ports.md`](../15-webview-ports.md). |
+| `sampler-v41` | v4.1 | unified `type: "sampler"` graph node + v4.1 zone features (`pingpong` / `release` loop modes, `loopCrossfade`, `roundRobinGroup`, `choke`, `trigger: "release"`, `pitchTracking: false`). |
+| `sliceMap-v41` | v4.1 | sampler-node `sliceMap` block (author slices + `autoDetect: "markers"/"grid:N"/"transients"`). |
+| `sampleMeta-v41` | v4.1 | zone-level `meta` block surfaced to the plugin (original tempo / root key / cue markers extracted from WAV chunks). |
+| `userSamples` | v4.1 Phase B | user-assignable sample slots (`userAssignable` / `slotId` / `fallbackFile` on zones, `sampleBank` block, `openSamplePicker` + `clearSampleSlot` host commands, `sampleAssigned` + `sampleSlots` iframe events, POVR `.ftrk` persistence). |
+| `presetBank-v4` | v4.1 Phase C | user preset persistence — webview `presetSave` with `scope: "project"|"library"`, `presetDelete`, `sampleAssignments` on factory + user presets, `.ftrk` PPRS block, per-plugin IndexedDB preset library. |
 
 ## Detailed reference
 
@@ -192,6 +200,109 @@ plugin loads silently on old hosts and produces garbage audio.
 `ntvalidate` (and `ntpack`'s pre-flight) catches the common cases:
 webview controls without `webview-ui`, graph nodes without `graph`,
 etc. Run it.
+
+### `sampler-v41`
+
+Enables the unified `type: "sampler"` graph node and the v4.1
+extensions to `PluginSampleZone`:
+
+- Loop modes `"pingpong"` and `"release"` (the v1 boolean form keeps
+  meaning one-shot vs forward-loop).
+- `loopCrossfade` (equal-power fade over the loop seam, seconds).
+- `roundRobinGroup` — same-group zones rotate across triggers.
+- `choke` — same-group zones cut each other off.
+- `trigger: "release"` — zone fires on noteOff instead of noteOn.
+- `pitchTracking: false` — fixed-rate playback regardless of note.
+
+The node unifies the three prior paths (v1/v2 `dsp.samples[]`
+multi-zone kits, the v3 granular node, and custom worklet choppers)
+under one declarative primitive. Zones and a `sliceMap` can coexist
+on the same sampler node.
+
+**Triggers failure when**: any `nodes[]` entry has `type: "sampler"`,
+OR any zone declares a v4.1-only field, and `requires` is missing
+`"sampler-v41"`.
+
+**See**: [`../16-sampler-node.md`](../16-sampler-node.md),
+[`schema.md#sampler-node`](schema.md#sampler-node)
+
+### `sliceMap-v41`
+
+Enables a sampler node's `sliceMap` block — breakbeat-style chopping
+where a single WAV is divided into N slices and each slice plays on
+a consecutive MIDI note. Supports author-supplied `slices[]` and the
+auto-detect modes `"markers"` (read WAV cue chunk), `"grid:N"`
+(divide uniformly), and `"transients"` (onset detection; Phase A
+falls back to grid:16 if the detector isn't shipped yet).
+
+**Triggers failure when**: a sampler node has a `sliceMap` and
+`requires` is missing `"sliceMap-v41"`.
+
+**See**: [`../16-sampler-node.md`](../16-sampler-node.md)
+
+### `sampleMeta-v41`
+
+Enables the zone-level `meta` block. The loader parses WAV SMPL
+(root key + loop points), ACID (tempo), and cue chunks at sample-
+decode time and attaches the results to each zone's `meta` field.
+Authors may override any field in `plugin.json`; manual values win
+over auto-extracted ones.
+
+**Triggers failure when**: a zone authors `meta.originalTempo`,
+`meta.originalKey`, or `meta.cuePoints[]` and `requires` is missing
+`"sampleMeta-v41"`.
+
+### `userSamples`
+
+Enables user-assignable sample slots — zones the user can drop their
+own WAV into at runtime. Covers:
+
+- Zone fields: `userAssignable`, `slotId` (required, unique), `slotLabel`,
+  `fallbackFile`, `accept: string[]`, `maxDurationSec`.
+- Top-level `sampleBank` block: `{ userSlotCount, allowUserSwap,
+  presetsCarrySamples }`.
+- Fully-wired webview bridge:
+  - `hostCommand: "openSamplePicker"` → opens a native picker, hashes
+    the selection, stores in IndexedDB, updates the override table.
+  - `hostCommand: "clearSampleSlot"` → reverts a slot to fallback.
+  - Host → iframe `sampleAssigned` event (per-slot change).
+  - Host → iframe `sampleSlots` snapshot (on mount + every change).
+- POVR `.ftrk` block: user drops persist with the project; reopening
+  on another machine replays the user's samples intact.
+
+**Triggers failure when**: any zone declares `userAssignable: true`,
+OR the top-level `sampleBank` block is present, and `requires` is
+missing `"userSamples"`.
+
+**See**: [`../17-user-samples.md`](../17-user-samples.md)
+
+### `presetBank-v4`
+
+Enables user preset persistence. Covers three related features:
+
+- `presets[].sampleAssignments` on factory presets — a `slotId →
+  archive-path` map so a kit preset can ship with "which WAV goes
+  in which slot". Keys must match a declared `slotId`; values must
+  resolve inside the archive. Both enforced by `ntvalidate`.
+- Webview `presetSave` gains `scope: "project" | "library"`,
+  `includeSampleAssignments?`, and `tags?`. `"project"` writes into
+  the `.ftrk` PPRS block so the preset travels with the song;
+  `"library"` writes into a per-plugin IndexedDB bank that
+  persists across projects.
+- Webview `presetDelete` removes a user preset from whichever scope
+  holds it. Factory ids are read-only.
+
+`presetList` entries gain an optional `scope` discriminator
+(`"factory" | "project" | "library"`) so iframe preset browsers can
+group or filter.
+
+**Triggers failure when**: any `presets[]` entry declares
+`sampleAssignments`, OR an iframe opts into library-scope
+`presetSave`, and `requires` is missing `"presetBank-v4"`.
+`sampleAssignments` also require `"userSamples"` (a user-slot
+system is a prerequisite).
+
+**See**: [`../18-preset-bank.md`](../18-preset-bank.md)
 
 ## How the loader checks
 

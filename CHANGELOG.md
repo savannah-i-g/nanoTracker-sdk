@@ -16,6 +16,402 @@ history, see `git log` in the main repo.
 
 ---
 
+## v4.2 — Definitive sampler + patch distribution (2026-04)
+
+Closes every deferred caveat from the v4.1 Phase A/B/C rollout and
+ships `.ntpreset` — the distributable preset archive format that
+completes the patch-sharing story. No new schema fields, no new
+capability flags; v4.2 is a correctness + completeness pass on top
+of v4.1's Phase C surface.
+
+**Closed caveats from Phase A:**
+
+- **`loopCrossfade` now audible.** The forward-loop path pre-bakes
+  an equal-power cos/sin seam blend into a cached per-(buffer,
+  bounds, fade) AudioBuffer. Native Web Audio looping then
+  transitions smoothly. Ping-pong already used its own cached
+  dual-direction buffer — unchanged in v4.2.
+- **`sliceMap.autoDetect: "transients"` now detects transients.**
+  Shipped a spectral-energy-flux onset detector with moving-
+  median normalisation and a 40 ms minimum inter-onset gap. No
+  more `grid:16` fallback for realistic breakbeat input.
+- **`sliceMap.autoDetect: "markers"` honours cue markers even
+  when the source isn't attached to a zone.** The loader now
+  exposes a path-keyed metadata map on `LoadedPlugin.sampleMeta`
+  that the sampler runtime consults for slice-map sources.
+
+**Closed caveats from Phase C:**
+
+- **Preset-load `sampleAssigned` carries real metadata.** When a
+  preset's `sampleAssignments` resolves a hash, the host looks up
+  the original filename, sample rate, channel count, and duration
+  from IndexedDB rather than emitting placeholder zeros.
+- **Missing blobs surface as `__nt_error`.** A preset referencing
+  a hash the local blob store has never seen now reports
+  `{where: "presetLoad", message: "sample blob missing for slot …"}`
+  back to the iframe instead of silently reverting to fallback.
+
+**New — `.ntpreset` distribution:**
+
+Zip archive format for sharing user presets (and the samples they
+reference) between machines:
+
+```
+my-preset.ntpreset
+├── preset.json          # UserPresetRecord + pluginRef
+└── samples/             # optional
+    └── sha256-<hex>.wav
+```
+
+`preset.json` shape:
+
+```jsonc
+{
+  "format": "ntpreset",
+  "formatVersion": 1,
+  "pluginRef": {
+    "id":   "plugin:KIT-8@1.2.0",
+    "name": "KIT-8",
+    "version": "1.2.0",
+    "minSchemaVersion": 4
+  },
+  "preset": UserPresetRecord
+}
+```
+
+Sample files are content-hash-addressed: filename must match the
+actual SHA-256 of the bytes or the importer rejects the entry. This
+makes the format robust to file tampering and dedupes automatically
+when the same WAV is referenced by multiple presets.
+
+**New — webview host commands:**
+
+- `hostCommand: "exportPreset" { presetId }` — resolves the preset
+  in project + library scope, zips up `preset.json` + every
+  referenced sample blob, triggers a browser download.
+- `hostCommand: "importPreset"` — opens a file picker, unpacks the
+  archive, installs sample blobs into IndexedDB, writes the record
+  to the per-plugin library, and fires host → iframe
+  `presetImported { presetId, scope: "library", missingHashes[] }`.
+
+**New — host → iframe event:**
+
+- `presetImported { presetId, scope, missingHashes }` — fired after
+  a successful `importPreset`. `missingHashes[]` is populated when
+  the archive's `preset.sampleAssignments` references hashes that
+  weren't bundled (the `.ntpreset` was exported standalone without
+  blobs); iframes can warn the user that some slots will revert to
+  fallback.
+
+**Deprecations status:**
+
+- `PluginVoiceEngine.inputs` / `.outputs` — v4.1 originally
+  scheduled retirement; v4.2 defers to a future major (v5.0)
+  because internal `workspaceCableGraph` / `instrumentWorkspace`
+  consumers still depend on the positional arrays as a guaranteed-
+  populated fallback path. No action required from plugin authors.
+
+**Deferred to v5.0 or later:**
+
+- Cross-instrument performance snapshots (one preset spans
+  multiple plugin instances).
+- Streaming decode for very large samples (>30s high-resolution
+  source material).
+- Preset-library cloud sync.
+
+**Docs:**
+
+- [`docs/19-ntpreset.md`](docs/19-ntpreset.md) — `.ntpreset`
+  format spec + authoring guide.
+- [`docs/16-sampler-node.md`](docs/16-sampler-node.md) — marker/
+  transient caveats removed.
+- [`docs/18-preset-bank.md`](docs/18-preset-bank.md) — import/
+  export sections closed.
+- [`docs/reference/event-bus.md`](docs/reference/event-bus.md) —
+  `presetImported` event added.
+
+---
+
+## v4.1 — Sampler plugin primitive, Phase C (2026-04)
+
+User preset persistence. v4.0 reserved `presetSave` as a webview
+bridge surface that validated but didn't persist; Phase C finishes
+the wiring. Presets can now carry parameter values AND user sample
+assignments, save into either a per-plugin IndexedDB library
+(cross-project) or the project itself (via a new `.ftrk` PPRS
+block), and reload with every sample the user had selected at save
+time.
+
+All Phase C additions are capability-gated behind `"presetBank-v4"`
+and build on `"userSamples"` from Phase B. v4.0 / v4.1-Phase-A/B
+plugins load unchanged.
+
+**New — user preset scopes:**
+
+- `scope: "project"` (default) — the preset ships inside the .ftrk
+  PPRS block. Travels with the song.
+- `scope: "library"` — the preset persists in the per-plugin
+  IndexedDB bank. Survives project switches; does not travel with
+  the song.
+
+Both scopes share one record shape (`UserPresetRecord`). Records
+may optionally carry `sampleAssignments` — a `slotId → content-hash`
+map that, on load, re-applies each override from IndexedDB onto the
+live per-instance table.
+
+**New — factory-preset sample assignments:**
+
+Factory `presets[]` entries may now declare:
+
+```jsonc
+{
+  "name": "Classic 909",
+  "values": { "tune": 0.5 },
+  "sampleAssignments": {
+    "kick":  "samples/909-kick.wav",
+    "snare": "samples/909-snare.wav"
+  }
+}
+```
+
+Unlike user-scope assignments (which reference content hashes),
+factory assignments reference archive-relative paths. Both sides
+validate via `ntvalidate`: keys must resolve to declared `slotId`s,
+values must point to files that exist in the archive.
+
+**New — webview bridge, fully wired:**
+
+- `presetSave` payload extended with `scope?`, `includeSampleAssignments?`,
+  `tags?`. Host persists into the right store and broadcasts:
+  - Host → iframe `presetSaved { presetId, scope }`
+  - Host → iframe `presetList` refresh with merged factory /
+    project / library entries.
+- `presetLoad` now resolves user ids (prefix `"user-"`) in addition
+  to factory ids. Application path: parameters via the standard
+  `updateParams` route + `sampleAssignments` onto the override
+  table (reason: `"preset"`), so the sampler runtime picks up each
+  slot change on the next noteOn.
+- `presetDelete { presetId }` — new iframe → host message. Removes
+  a user preset from whichever scope holds it. Factory ids are
+  rejected.
+- `presetList` entries gain a `scope` discriminator
+  (`"factory" | "project" | "library"`) so iframe preset browsers
+  can group or filter.
+
+**New — `.ftrk` PPRS block (v13 project format):**
+
+Per-instance `{ activePresetId?, projectPresets: UserPresetRecord[] }`.
+JSON payload (preset records are small enough that the flexibility
+wins over a custom binary layout). Older hosts skip the block; data
+is preserved on re-save under a v4.1.2 host.
+
+**New — host-rendered slot panel (Phase B follow-up, ships with Phase C):**
+
+Plugins that declare user slots but don't author a webview picker
+now get a built-in panel below the plugin UI: one row per slot
+(label, current sample name, PICK, CLEAR). Suppressed by
+`sampleBank.allowUserSwap: false` for plugins that want to render
+their own picker.
+
+**New — capability flag:**
+
+- `"presetBank-v4"` — required for `sampleAssignments` on factory
+  presets OR for library-scope preset saves via the webview bridge.
+
+**Docs:**
+
+- [`docs/18-preset-bank.md`](docs/18-preset-bank.md) — preset
+  library authoring guide.
+- [`docs/reference/host-capabilities.md`](docs/reference/host-capabilities.md)
+  — new `presetBank-v4` entry.
+- [`docs/reference/event-bus.md`](docs/reference/event-bus.md) —
+  `presetSaved`, `presetList.scope`, `presetDelete` iframe message.
+- [`docs/09-webview.md`](docs/09-webview.md) — `presetSave` payload
+  extended with scope + includeSampleAssignments + tags.
+
+**Deferred to v4.2:**
+
+- `.ntpreset` distribution format — zip archive for sharing presets
+  between users, including sample blobs.
+- Streaming decode for very large samples.
+- Cross-instrument performance snapshots.
+
+---
+
+## v4.1 — Sampler plugin primitive, Phase B (2026-04)
+
+User-supplied sample slots. A plugin may now mark a sample zone
+`userAssignable: true` and users can drop their own WAV into it at
+runtime — via the webview `openSamplePicker` hostCommand (now fully
+wired, not just validated) or the host's built-in picker. Overrides
+are persisted per project via a new `.ftrk` POVR block, so reopening
+the song on any machine plays back with the user's samples intact.
+
+All Phase B additions are capability-gated behind `"userSamples"`.
+v4.0 / v4.1-Phase-A plugins load unchanged.
+
+**New — zone-level `userAssignable` fields:**
+
+- `userAssignable: true` — turns a zone into a user-swappable slot.
+- `slotId` — stable unique id (required when `userAssignable: true`).
+  The override table, POVR block, and `sampleAssigned` / `sampleSlots`
+  events all key on this.
+- `slotLabel` — human-readable label for the picker UI.
+- `fallbackFile` — archive-relative default sample used until the
+  user drops their own.
+- `accept: string[]` — MIME whitelist for the picker.
+- `maxDurationSec` — reject longer drops with a clear error.
+
+**New — top-level `sampleBank` block:**
+
+```jsonc
+"sampleBank": {
+  "userSlotCount": 16,
+  "allowUserSwap": true,
+  "presetsCarrySamples": "optional"  // reserved for Phase C
+}
+```
+
+Declares high-level sampler metadata (currently a hint to the host
+slot panel for sizing).
+
+**New — webview bridge, fully wired:**
+
+- `hostCommand: "openSamplePicker"` — now opens a native file picker,
+  decodes + hashes the selection, stores the blob in IndexedDB, and
+  updates the per-instance override table. Payload: `{ slotId }`.
+- `hostCommand: "clearSampleSlot"` — reverts a slot to its
+  `fallbackFile`. Payload: `{ slotId }`.
+- Host → iframe `sampleAssigned { slotId, sampleId, name, duration,
+  channels, sampleRate, source }` fired on every override change
+  (user drop, clear, project load).
+- Host → iframe `sampleSlots { slots }` — snapshot broadcast on
+  iframe mount AND on every change so compact UIs can rebind a grid
+  without tracking individual assigns.
+
+**New — `.ftrk` POVR block (v12 project format):**
+
+Per-instance, per-slot override blobs are embedded inline in the
+project file, keyed by SHA-256 content hash. Same WAV referenced by
+multiple slots dedupes automatically. Projects reopen on any machine
+with every user drop intact. Older hosts skip the block and load the
+project without overrides (no data loss — re-saving in v4.1.1+
+restores fidelity).
+
+**New — capability flag:**
+
+- `"userSamples"` — required when any zone declares `userAssignable`
+  or when `sampleBank` is present.
+
+**Docs:**
+
+- [`docs/17-user-samples.md`](docs/17-user-samples.md) — authoring
+  guide for user-assignable slots.
+- [`docs/reference/host-capabilities.md`](docs/reference/host-capabilities.md)
+  — new `userSamples` entry.
+- [`docs/reference/event-bus.md`](docs/reference/event-bus.md) —
+  `sampleAssigned` + `sampleSlots` iframe events.
+- [`docs/09-webview.md`](docs/09-webview.md) — retire "reserved"
+  notes on `openSamplePicker` + describe `clearSampleSlot`.
+
+**Reserved for Phase C (v4.1.2):**
+
+- User preset persistence (`presetSave` actually persists, preset
+  entries carry `sampleAssignments`, `PPRS` `.ftrk` block,
+  `pluginPresetBank.ts` library store).
+
+---
+
+## v4.1 — Sampler plugin primitive, Phase A (2026-04)
+
+Closes the "sampler plugins are second-class" gap in v4.0 by making
+sample-based instruments first-class at the schema level. Adds a
+unified `type: "sampler"` graph node that covers MPC-style breakbeat
+chopping, multi-sample drum kits, and single-sample pitched synths
+under one declarative primitive — authors pick one schema instead of
+faking it inside a custom AudioWorklet.
+
+All Phase A changes are **additive and capability-gated**. v4.0
+plugins load unchanged; a v4.1 plugin that uses any of the new
+fields is rejected by a v4.0 host with a precise "requires
+capability X" error so misconfiguration fails loudly rather than
+silently producing wrong audio.
+
+**New — unified sampler graph node:**
+
+- `type: "sampler"` graph node. Exposes a single stereo audio output
+  that voice connections can route like any other node. Declares
+  either `zones[]` (multi-sample with key/velocity mapping) or a
+  `sliceMap` (single WAV divided into triggerable slices), or both.
+- Fields on the node: `zones[]`, `sliceMap`, `polyphony`,
+  `samplerVoiceStealing`. See
+  [`docs/16-sampler-node.md`](docs/16-sampler-node.md).
+
+**New — extended `PluginSampleZone`:**
+
+- `loop` accepts the string union `"none" | "forward" | "pingpong" | "release"`
+  in addition to the legacy boolean form (true → `"forward"`, false
+  → `"none"` — existing plugins keep working).
+- `loopCrossfade` — equal-power fade over the loop seam, seconds.
+- `roundRobinGroup` — zones sharing the name rotate on successive
+  triggers.
+- `choke` — zones sharing the name cut each other off (classic
+  open/closed hi-hat behaviour).
+- `trigger: "release"` — zone fires on noteOff instead of noteOn
+  (piano release samples).
+- `pitchTracking: false` — playback rate locked regardless of note
+  (drum samples that shouldn't transpose).
+- `meta: { originalTempo, originalKey, cuePoints[] }` — read from
+  WAV SMPL / ACID / cue chunks at load time, author-overridable.
+
+**New — slice map:**
+
+- `sliceMap.source` — archive path to the WAV.
+- `sliceMap.slices[]` — author-supplied `{ start, end, note?,
+  velocity?, choke?, roundRobinGroup?, releaseOnGate? }`. When
+  `note` is omitted the runtime assigns `36 + index` (GM kick + N).
+- `sliceMap.autoDetect` — `"markers"` (read cue chunk) / `"grid:N"`
+  (uniform division) / `"transients"` (onset detection, Phase A
+  falls back to `"grid:16"`).
+- `sliceMap.triggerMode` — `"oneShot"` (default) plays slice to end;
+  `"gated"` loops the slice region while the key is held.
+
+**New — capability flags:**
+
+- `"sampler-v41"` — gates the sampler node and every v4.1-only zone
+  field above.
+- `"sliceMap-v41"` — gates the sliceMap block.
+- `"sampleMeta-v41"` — gates exposing WAV-chunk metadata to the
+  plugin via `zone.meta`.
+
+**Breaking changes:**
+
+- None. The v1 `loop: boolean` shape is still accepted. The
+  `PluginVoiceEngine.inputs` / `.outputs` deprecation was scheduled
+  for v4.1 but is deferred one release — they still work.
+
+**Reserved for Phase B (v4.1.1):**
+
+- User-supplied samples (`userAssignable` zones, `sampleBank`
+  block, `"userSamples"` capability, `hostCommand: "openSamplePicker"`
+  wiring, `sampleAssigned` iframe event, `POVR` `.ftrk` block).
+
+**Reserved for Phase C (v4.1.2):**
+
+- User preset persistence (`presetSave` actually persisting,
+  `sampleAssignments` in preset entries, `PPRS` `.ftrk` block).
+
+**Docs:**
+
+- [`docs/16-sampler-node.md`](docs/16-sampler-node.md) — sampler
+  authoring guide.
+- [`docs/reference/schema.md`](docs/reference/schema.md) — zone +
+  sampler node field reference.
+- [`docs/reference/host-capabilities.md`](docs/reference/host-capabilities.md)
+  — three new capability flags.
+
+---
+
 ## v4.0 — FX pedals, unified typed ports, bidirectional webview (2026-04)
 
 The largest spec change since v3. Plugin FX leave the TrackerFxMixer

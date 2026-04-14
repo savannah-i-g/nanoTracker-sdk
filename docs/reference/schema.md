@@ -323,6 +323,7 @@ Narrative:
 | `envelope` | v2 | Multi-stage envelope generator |
 | `granular` | v3 | Host-shipped granular synth (requires `"granular"` capability) |
 | `wavetable` | v3 | Host-shipped wavetable synth (requires `"wavetable"` capability) |
+| `sampler` | v4.1 | Unified sampler primitive — zones + slice map + round-robin + choke + release-triggered + pitch-tracking. Requires `"sampler-v41"`; `sliceMap` additionally requires `"sliceMap-v41"`. See [`../16-sampler-node.md`](../16-sampler-node.md) |
 
 ### Per-type fields
 
@@ -344,6 +345,7 @@ Which fields apply to which node type:
 | `fftSize` | `analyser` (default 256) |
 | `sampleFile`, `playbackMode`, `grainEnvelope` | `granular` |
 | `tableFile`, `frameCount`, `interpolation` | `wavetable` |
+| `zones[]`, `sliceMap`, `polyphony`, `samplerVoiceStealing` | `sampler` (v4.1) |
 | `parameterDescriptors` | `worklet` |
 
 ### Scope (v3, instrument graphs only)
@@ -454,13 +456,86 @@ generator whose colour is set by the instrument's top-level
   rootKey:       number,     // MIDI note at original pitch
   keyRange:      { lo: number, hi: number },
   velocityRange: { lo: number, hi: number },
-  loop:          boolean,
+  // loop mode — boolean (v1) or union string (v4.1, requires "sampler-v41")
+  loop:          boolean | "none" | "forward" | "pingpong" | "release",
   loopStart:     number,     // seconds
   loopEnd:       number,     // seconds, 0 = end of buffer
+  loopCrossfade?: number,    // v4.1 — equal-power seam fade, seconds
   startOffset:   number,     // seconds into buffer
   duration:      number,     // max playback duration, 0 = play to end
+  // ── v4.1 additions — require "sampler-v41" ──
+  roundRobinGroup?: string,  // same group rotates across triggers
+  choke?:           string,  // same group cuts each other off
+  trigger?:         "attack" | "release",   // "release" fires on noteOff
+  pitchTracking?:   boolean, // false = fixed rate regardless of note
+  // ── v4.1 — require "sampleMeta-v41" when authored manually ──
+  meta?: {
+    originalTempo?: number,  // BPM — from ACID chunk at load time
+    originalKey?:   number,  // MIDI note — from SMPL chunk
+    cuePoints?: Array<{ id: string, time: number, label?: string }>,
+  },
 }
 ```
+
+Fields under the "v4.1 additions" section are silently ignored by
+pre-v4.1 hosts, so declaring `"sampler-v41"` in `requires[]` is the
+only way to guarantee correct playback. The loader also auto-fills
+`meta` from WAV SMPL/ACID/cue chunks when the source WAV carries
+them; author-supplied values win over auto-extracted ones.
+
+---
+
+## Sampler node
+
+```ts
+// One entry in dsp.graph.nodes[] (or FX dsp.nodes[])
+{
+  id:   string,
+  type: "sampler",
+  scope?: "voice" | "shared",  // default "voice" for instrument graphs
+
+  // At least one of zones[] or sliceMap is required.
+  zones?:    PluginSampleZone[],
+  sliceMap?: PluginSliceMap,
+
+  polyphony?: number,                          // 1..64, default 16
+  samplerVoiceStealing?: "oldest" | "quietest" | "none",
+}
+```
+
+### `PluginSliceMap` (v4.1, requires `"sliceMap-v41"`)
+
+```ts
+{
+  source: string,           // archive-relative WAV path (Phase B: "slotId:<id>")
+  slices?: Array<{
+    start:    number,       // seconds into source
+    end:      number,       // must be > start
+    note?:    number,       // default: 36 + index
+    velocity?: number,      // min velocity, default 1
+    choke?:            string,
+    roundRobinGroup?:  string,
+    releaseOnGate?:    boolean,
+  }>,
+  autoDetect?: "markers" | "transients" | "grid:<N>" | null,
+  triggerMode?: "oneShot" | "gated",    // default "oneShot"
+}
+```
+
+`autoDetect` fills in `slices[]` at load time:
+
+- `"markers"` — read the source WAV's `cue ` chunk and derive
+  slice boundaries from consecutive cue points.
+- `"grid:N"` — divide the source uniformly into `N` equal slices.
+  Literal form: `"grid:16"` for 16 slices.
+- `"transients"` — onset detection. Phase A falls back to
+  `"grid:16"` until the transient detector ships; authors can
+  target the final form now and the behaviour upgrades transparently.
+
+`triggerMode: "gated"` loops the slice region at audio rate while
+the key is held (classic sampler / rompler behaviour); the default
+`"oneShot"` plays each slice through to its end regardless of note
+duration.
 
 ---
 

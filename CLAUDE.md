@@ -22,12 +22,28 @@ Three kinds, roughly:
 
 ## Spec versions in play
 
-- **v4.0** (current) — typed ports, pedals, bidirectional webview
-  bridge, capability-gated extensions
+- **v4.2** (current) — definitive sampler + patch-distribution pass.
+  Closes every Phase A/B/C caveat: `loopCrossfade` is audible,
+  `autoDetect: "transients"` is wired, `"markers"` works on slice-
+  map sources, preset-load metadata is accurate, missing blobs
+  surface as `__nt_error`. Adds `.ntpreset` distribution format
+  (zip containing `preset.json` + content-hashed sample blobs) with
+  `hostCommand: "exportPreset" | "importPreset"` + a
+  `presetImported` iframe event. See
+  [`docs/19-ntpreset.md`](docs/19-ntpreset.md).
+- v4.1 — sampler primitive (Phase A), user-assignable slots
+  (Phase B), user preset persistence (Phase C). See
+  [`docs/16-sampler-node.md`](docs/16-sampler-node.md),
+  [`docs/17-user-samples.md`](docs/17-user-samples.md),
+  [`docs/18-preset-bank.md`](docs/18-preset-bank.md).
+- v4.0 — typed ports, pedals, bidirectional webview bridge.
 - v3.5, v3.4, v3.3, …, v1 — older versions still load. New plugins
-  should target v4 unless you have a reason
+  should target v4 unless you have a reason.
 
-`schemaVersion: 4` is the right default for new work.
+`schemaVersion: 4` is the right default for new work. Sampler-based
+plugins add `"sampler-v41"` to `requires[]`; kits that ship user
+slots or factory `sampleAssignments` also declare `"userSamples"` +
+`"presetBank-v4"` as applicable.
 
 ## Hard rules (the loader enforces these)
 
