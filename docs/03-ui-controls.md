@@ -108,7 +108,13 @@ Rotary 32×32 dial. Drag vertically to change value; double-click to
 reset to `default`. The curve (linear/exponential/logarithmic) comes
 from the parameter definition, not the control.
 
-Optional fields: `label` (overrides parameter label).
+Optional fields:
+- `label` (overrides parameter label)
+- `midiLearnable` — v3.6 per-placement override of the parameter's
+  `midiLearnable` flag. Use when the same parameter is rendered by
+  two controls and only one should expose the MIDI Learn context-menu
+  entry. Defaults to the parameter's own flag (which defaults to
+  `true`).
 
 ### `slider` — horizontal fader
 

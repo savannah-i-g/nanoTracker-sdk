@@ -32,6 +32,7 @@ Typical block:
 | `displayDecimals` | no | number | Precision shown in the readout. Defaults to auto. |
 | `group` | no | string | v2: optional grouping label. Cosmetic organisation hint for UI renderers. |
 | `curve` | no | `"linear" \| "exponential" \| "logarithmic"` | v2: non-linear value mapping. See below. |
+| `midiLearnable` | no | boolean | v3.6: whether the host shows a "MIDI LEARN" entry in this parameter's right-click menu. Defaults to `true`. Set `false` for display-only or structural parameters (e.g. an oscillator-type selector). Does not prevent the host from reading or writing the parameter — only hides it from the MIDI Learn UX. |
 
 ## Keys
 

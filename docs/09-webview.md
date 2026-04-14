@@ -253,6 +253,76 @@ surface for v4.x. The host may ignore a command for UX reasons (e.g.
 are silent by design. Authors should treat `hostCommand` as an
 advisory hint, not an imperative.
 
+### Raw MIDI CC to iframe (v3.6, opt-in)
+
+Most plugins should NOT need raw MIDI CC — the host's MIDI Learn
+system takes care of mapping incoming CCs to your declared parameters
+and delivers them as ordinary `{type:"param"}` bridge messages, which
+your iframe already handles. Use this capability only when you want
+CCs that are NOT parameters (e.g. custom gesture handling, mod-wheel
+heuristics, per-CC learn inside the iframe itself).
+
+Opt in:
+
+```jsonc
+"requires": ["pedal-v4", "portsV4", "graph", "webview-ui", "midi-cc"]
+```
+
+With the `midi-cc` capability the host forwards every CC after device
++ channel filtering:
+
+```js
+case "midiCC": /* ev.channel (1..16), ev.number (0..127), ev.value (0..127) */ break;
+```
+
+14-bit CC assembly (MSB on CC 0..31, LSB on CC 32..63 inside a 50 ms
+window) happens host-side before the iframe sees the event. For a
+matched 14-bit pair the iframe receives a single `midiCC` event where
+`number` is the MSB's CC number and `value` is the combined 0..16383
+reading; the LSB half is not re-emitted separately.
+
+### Song position sync (v3.6, opt-in)
+
+If your plugin needs to stay in beat-sync with the tracker transport
+(e.g. a step sequencer sub-module in your webview, an LFO whose
+phase is locked to the song), opt in:
+
+```jsonc
+"requires": ["webview-ui", "consumes-song-position"]
+```
+
+The host will post `{type:"songPosition"}` messages:
+
+- On every transport Start / Stop / Continue (unthrottled).
+- On every seek / tempo change (unthrottled).
+- During playback, **rAF-throttled** (≤ once per frame) to keep the
+  iframe in rough sync without saturating the postMessage channel.
+
+```js
+case "songPosition": /*
+  ev.position = {
+    orderPos, patternIndex, row, tick,
+    ppq24Counter,       // monotonic 24 PPQN tick since last Start
+    beatsSinceStart,    // float — for phase-coherent modulation
+    audioTime, performanceTime,
+  }
+  ev.ppq = 24             // reserved for future non-24 PPQN hosts
+*/ break;
+```
+
+**Intended use.** Anything that wants to be "in time" without owning
+its own clock. Don't use it as a replacement for `noteOn` — notes are
+still the right primitive for per-step triggers. Use `beatsSinceStart`
+for continuous phase and `ppq24Counter` for quantised subdivision.
+
+### Webview patch cables (v4.1, opt-in)
+
+Plugins with sub-modules inside their webview UI can surface
+additional workspace jacks via the `webview-ports` capability +
+`ports.webviewExposable[]` manifest block. See
+[`docs/15-webview-ports.md`](15-webview-ports.md) (shipping with
+Phase 4 of the current upgrade) for the protocol.
+
 **The `presetList` event.** The host posts the current preset catalogue
 as a `{type:"presetList", presets:[{id,name},…]}` event after the
 ready handshake (when the plugin authors at least one factory
