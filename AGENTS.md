@@ -23,6 +23,22 @@ AudioWorklets, packed into `.ntins` (instrument) or `.ntsfx`
    `<link href>`, or ES module imports. Inline everything.
 6. **Theme override requires the `themeOverride` capability.**
 
+## Note / velocity are MIDI 0–127 (not normalized)
+
+Every `note` and `velocity` the host sends — in worklet messages,
+webview bridge events, legacy v3 entry points, and sample zones
+(`rootKey`, `velocityRange`) — is a **MIDI integer 0–127**. Not 0..1.
+Not Hz.
+
+- `note: 60` = middle C; `note: 69` = A4
+- `velocity: 127` = loudest; divide by 127 if you want a 0..1 gain
+- `frequency` is pre-computed by the host — use it directly, don't
+  treat `note` as Hz
+
+The loader does NOT validate this — it's the most common authoring
+mistake. Assuming `velocity` is already normalized makes instruments
+play 127× too quiet or clip into oblivion.
+
 ## Default to v4
 
 `schemaVersion: 4` for new plugins. v1–v3 still loads but is legacy.

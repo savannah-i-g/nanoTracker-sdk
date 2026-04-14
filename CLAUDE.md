@@ -45,6 +45,34 @@ Three kinds, roughly:
 
 `ntvalidate` catches every one of these at pack-time.
 
+## Note / velocity scale — MIDI 0–127, not normalized
+
+Every `note` and `velocity` value the host sends is a **MIDI integer
+in the range 0–127**. Not 0..1. Not Hz. This applies everywhere:
+
+- AudioWorklet `noteOn` / `noteOff` port messages (`note`, `velocity`)
+- Webview bridge `noteOn` / `noteOff` events
+- Sample zone `rootKey`, `velocityRange.lo` / `.hi`
+- Legacy v3 engine entry points (`noteOn(note, velocity)`, `setPitch`)
+
+Conventions worth memorising:
+
+| Value | Scale | Example |
+|---|---|---|
+| `note` | MIDI 0–127 | `60` = middle C (C4), `69` = A4 |
+| `velocity` | MIDI 0–127 | `127` = loudest, `0` ≈ note-off |
+| `frequency` | Hz, pre-computed by host | `440` Hz at `note: 69` |
+
+If your DSP wants a 0..1 gain from velocity, divide by 127 yourself
+(`const gain = velocity / 127`). If it wants frequency, either read
+`frequency` from the `noteOn` message (already computed) or compute
+`440 * 2 ** ((note - 69) / 12)`.
+
+**Don't** assume velocity is pre-normalized to 0..1 — this is the
+single most common authoring mistake and the loader will not catch
+it. The instrument will simply play at 1/127th of the expected level
+or clip into distortion, depending on which way you got it wrong.
+
 ## v4 pedal essentials
 
 ```jsonc

@@ -234,7 +234,7 @@ window.parent.postMessage({ type: "hostCommand", command: "openSamplePicker" }, 
 | `paramWrite` | `parameters[].key` exists; value clamped to `min`/`max` | dropped, `__nt_error` back |
 | `presetLoad` | `presetId` resolves in current preset catalogue | dropped, `__nt_error` back |
 | `presetSave` | `name` non-empty, ≤64 chars; params match known keys | dropped, `__nt_error` back |
-| `noteOn` / `noteOff` | `note` 0..127, `velocity` 0..127 | clamped |
+| `noteOn` / `noteOff` | `note` 0..127, `velocity` 0..127 (**MIDI integer, not normalized 0..1**) | clamped |
 | `hostCommand` | `command` in whitelist | dropped, `__nt_error` back |
 
 Dropped writes never throw; the host posts a diagnostic back:

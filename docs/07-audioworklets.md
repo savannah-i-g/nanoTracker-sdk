@@ -248,12 +248,27 @@ registerProcessor("my-synth", MySynthProcessor);
 | `allNotesOff` | `{ type }` | transport stop or panic |
 | `param` | `{ type, key, value }` | UI knob or automation changes a parameter |
 
+**`note`** is the **MIDI note number as an integer in the range
+0–127** (`60` = middle C, `69` = A4). It is **not** a frequency in Hz
+and **not** a normalized 0..1 value.
+
 **`frequency`** is pre-computed by the host from the MIDI note number
 using equal temperament (`440 * 2^((note-69)/12)`). Use it directly;
 don't recompute.
 
-**`velocity`** is the MIDI 0–127 value from the tracker volume
-column, scaled appropriately.
+**`velocity`** is the **MIDI 0–127 integer value** from the tracker
+volume column. It is **not** pre-normalized to 0..1 — if your DSP
+wants a 0..1 gain, divide by 127 yourself:
+
+```js
+const gain = velocity / 127;  // or Math.pow(velocity / 127, 2) for perceptual scaling
+```
+
+> ⚠️ Assuming `velocity` is already 0..1 is the most common worklet
+> authoring mistake. The symptom is silence-or-click: at `velocity:
+> 100` the voice plays at gain 100 and instantly clips, or (if you
+> multiply twice) at `100/127/127` and is inaudible. The loader does
+> not catch this — it's a silent contract.
 
 **Note matching.** The host sends `noteOn` and `noteOff` with the
 same `note` number, so your voice matching logic can pair them via
