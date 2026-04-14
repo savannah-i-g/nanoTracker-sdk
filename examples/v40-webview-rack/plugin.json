@@ -16,9 +16,9 @@
       { "id": "out", "label": "OUT", "kind": "audio" }
     ],
     "webviewExposable": [
-      { "id": "lfo1.out",  "label": "LFO1",      "kind": "cv", "direction": "out", "source": "lfo1",  "defaultVisible": false },
-      { "id": "lfo2.out",  "label": "LFO2",      "kind": "cv", "direction": "out", "source": "lfo2",  "defaultVisible": false },
-      { "id": "lfo3.out",  "label": "LFO3",      "kind": "cv", "direction": "out", "source": "lfo3",  "defaultVisible": false },
+      { "id": "lfo1.out",  "label": "LFO1",      "kind": "cv", "direction": "out", "source": "lfo1",  "defaultVisible": true  },
+      { "id": "lfo2.out",  "label": "LFO2",      "kind": "cv", "direction": "out", "source": "lfo2",  "defaultVisible": true  },
+      { "id": "lfo3.out",  "label": "LFO3",      "kind": "cv", "direction": "out", "source": "lfo3",  "defaultVisible": true  },
       { "id": "lfo1.rate", "label": "LFO1 RATE", "kind": "cv", "direction": "in",  "target": "lfo1.frequency", "defaultVisible": false },
       { "id": "lfo2.rate", "label": "LFO2 RATE", "kind": "cv", "direction": "in",  "target": "lfo2.frequency", "defaultVisible": false },
       { "id": "lfo3.rate", "label": "LFO3 RATE", "kind": "cv", "direction": "in",  "target": "lfo3.frequency", "defaultVisible": false }
