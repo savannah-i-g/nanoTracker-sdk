@@ -85,7 +85,7 @@ Every tracker event lands in the iframe's log.
 | `forwardParams` | `true` | forward `param` events when knobs/sliders change |
 | `forwardEffects` | `false` | *(v3.5)* forward `trackerEffect` events (raw MOD effect-column bytes). See [`reference/event-bus.md`](reference/event-bus.md#trackereffect-v35). |
 | `acceptsAudioFrames` | `false` | *(v3.5)* route PCM audio posted from the iframe back into the host's per-instrument output chain. See [`12-webview-audio.md`](12-webview-audio.md). |
-| `acceptsFocus` | `true` | when `false`, disables pointer events on the iframe so the tracker keeps keyboard focus even while the cursor is over it |
+| `acceptsFocus` | `true` | when `false`, disables pointer events on the iframe so the tracker keeps keyboard focus even while the cursor is over it. **Must be `true` (or omitted — `true` is the default) if your iframe has interactive controls that need clicks or drags, including anything driven by `acceptsParamWrites`.** An iframe with `acceptsFocus: false` renders with `pointer-events: none` in the host, so no amount of `pointerdown` handlers inside it will fire. |
 | `acceptsParamWrites` | `false` | *(v4)* iframe can post `{type:"paramWrite",key,value}` to set parameter values. Requires `"webview-writes"` capability. See [Bidirectional bridge (v4)](#bidirectional-bridge-v4). |
 | `acceptsPresetWrites` | `false` | *(v4)* iframe can post `presetLoad` / `presetSave`. Requires `"webview-writes"`. |
 | `acceptsNotes` | `false` | *(v4)* iframe can post `noteOn` / `noteOff` into the plugin's voice engine. Requires `"webview-writes"`. |

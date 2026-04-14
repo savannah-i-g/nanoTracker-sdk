@@ -94,13 +94,22 @@ rather than `srcNode.connect(node)`.
 
 **Visual:** solid ring, CV accent colour. Cable body: solid + CV tint.
 
-**Required field:** `target: "<nodeId>.<paramName>"` — resolves against
-your `dsp.graph.nodes[]` and that node's exposed AudioParams. The host
-fails the plugin at load time if the target doesn't resolve.
+**Required field (INPUT only):** `target: "<nodeId>.<paramName>"` —
+resolves against your `dsp.graph.nodes[]` and that node's exposed
+AudioParams. The host fails the plugin at load time if the target
+doesn't resolve.
+
+CV **OUTPUT** ports don't take `target` — the host instantiates a
+`GainNode` for the `port:<id>` reference and any connection in
+`dsp.connections` routes a graph signal into it. See the
+[`v40-cv-lfo` example](../examples/v40-cv-lfo/plugin.json) for the
+canonical shape: `{ "from": "lfo", "to": "port:cvOut" }` with a
+`{ "id": "cvOut", "kind": "cv" }` entry under `ports.outputs`.
 
 **Use for:** external LFO input into a filter cutoff, envelope-follower
 input driving a gain, pitch CV for a pitch-tracker, anything that maps
-"external signal → parameter".
+"external signal → parameter". As an output, emit any modulation
+source (LFO, envelope, sample-and-hold) for other plugins to consume.
 
 **Scaling:** `audio → cv` connections work without transformation; the
 receiving AudioParam clamps to its own `min`/`max`. If you need
