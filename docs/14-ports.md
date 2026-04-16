@@ -40,7 +40,7 @@ Pedals must declare the block explicitly.
 {
   id:      string,
   label:   string,
-  kind:    "audio" | "sidechain" | "cv" | "gate",
+  kind:    "audio" | "sidechain" | "cv" | "gate" | "midi",
   target?: string,   // when kind == "cv": "<nodeId>.<paramName>"
   index?:  number,   // worklet input/output index override
 }
@@ -129,17 +129,37 @@ line.
 trigger", drum-machine-style trigger buses, arpeggiator step-advance
 inputs.
 
-**v4.0 implementation status:**
+**Implementation status:**
 
-- **Gate OUTPUT** ports work end-to-end in v4.0. Declarative graphs
-  expose any audio source as `kind: "gate"` and the cable graph
-  handles edge detection at the destination side.
-- **Gate INPUT** ports require a worklet processor that registers a
-  gate handler — declarative-graph plugins cannot consume gate
-  inputs directly in v4.0. Workaround: declare the input as
+- **Gate OUTPUT** ports work end-to-end. Declarative graphs expose
+  any audio source as `kind: "gate"` and the cable graph handles
+  edge detection at the destination side.
+- **Gate INPUT** ports require a worklet processor that registers
+  a gate handler — declarative-graph plugins cannot consume gate
+  inputs directly. Workaround: declare the input as
   `kind: "audio"` and threshold inside your graph (e.g. with a
-  waveshaper + envelope follower). Native gate-input handling for
-  declarative graphs is reserved for v4.1.
+  waveshaper + envelope follower).
+
+### `midi`
+
+Message-passing cable transport. MIDI cables are **not** Web Audio
+edges — events cross the cable as structured `TrackerMidiEvent`
+objects, not as raw bytes. The host wires endpoints via an
+internal `MidiBus`, manages `hops` for cycle tolerance, and fans
+events out to every subscribed sink.
+
+**Visual:** square warm-yellow jack pip (instead of round), warm
+orange cable stroke.
+
+**Use for:** triggering an instrument from a cabled MIDI source,
+routing a step sequencer to multiple instruments, feeding the
+tracker's clock into an external MIDI sink, chaining MIDI
+processors (arp → scale quantiser → synth).
+
+**Automatic on instruments:** every `manifest.type === "instrument"`
+plugin gets implicit `midi-in` + `midi-thru` ports injected at
+load time unless the manifest sets `ports.midiIn: false` /
+`ports.midiThru: false`. See [`22-midi-ports.md`](22-midi-ports.md).
 
 ---
 
@@ -148,12 +168,13 @@ inputs.
 Host validation on cable creation — mismatches are dropped silently
 with a console warning:
 
-| Source \ Dest | `audio` | `sidechain` | `cv` | `gate` |
-|---|---|---|---|---|
-| `audio` | ✓ | ✓ | ✓ | ✓ (edge watcher) |
-| `sidechain` | ✓ | ✓ | ✓ | ✓ |
-| `cv` | ✗ | ✗ | ✓ | ✗ |
-| `gate` | ✗ | ✗ | ✗ | ✓ |
+| Source \ Dest | `audio` | `sidechain` | `cv` | `gate` | `midi` |
+|---|---|---|---|---|---|
+| `audio`     | ✓ | ✓ | ✓ | ✓ (edge watcher) | ✗ |
+| `sidechain` | ✓ | ✓ | ✓ | ✓ | ✗ |
+| `cv`        | ✗ | ✗ | ✓ | ✗ | ✗ |
+| `gate`      | ✗ | ✗ | ✗ | ✓ | ✗ |
+| `midi`      | ✗ | ✗ | ✗ | ✗ | ✓ |
 
 Rules of thumb:
 - Audio and sidechain are interchangeable — users may cable them
@@ -193,6 +214,7 @@ same key:
 | `sidechain` | dashed ring | dashed line `10 5` | same as audio |
 | `cv` | solid ring, accent fill | solid line | `--color-primary-glow` |
 | `gate` | dotted ring | dotted line `2 4` | `--color-text` |
+| `midi` | square pip, warm yellow | solid line | `--workspace-midi-jack` / `--workspace-midi-cable` |
 
 The cable body's tap/reroute mode still drives its base colour
 (`settings.colour` / `settings.rerouteColour`); the kind only adds

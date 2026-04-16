@@ -278,13 +278,56 @@ Optional `label` field renders a heading above the children.
 }
 ```
 
-v3-only. Mounts an HTML file from your plugin archive inside a
-sandboxed `<iframe>`, wires a `postMessage` bridge to forward tracker
-events. This is the escape hatch for "I need to draw my own pixels."
+Mounts an HTML file from your plugin archive inside a sandboxed
+`<iframe>`, wires a `postMessage` bridge to forward tracker events.
+This is the escape hatch for "I need to draw my own pixels."
 
 See [`09-webview.md`](09-webview.md) for the full reference and
-[`10-wasm-in-webview.md`](10-wasm-in-webview.md) for the DOOM
+[`10-wasm-in-webview.md`](10-wasm-in-webview.md) for a WASM
 walkthrough.
+
+### `image` — static asset
+
+```json
+{
+  "type":   "image",
+  "asset":  "logo",
+  "width":  120,
+  "height": 48
+}
+```
+
+Renders an `<img>` whose source is the decoded image asset at
+`LoadedPlugin.assets.images[asset]`. The asset id must match a
+corresponding entry in `assets.images[]` at the manifest top level.
+Optional `width` / `height` override the natural dimensions;
+rendering uses `object-fit: contain` with `image-rendering:
+pixelated`.
+
+Missing assets render a `[image:id missing]` placeholder so
+authoring errors are visible rather than silent.
+
+See [`20-graphics-assets.md`](20-graphics-assets.md).
+
+### `sprite` — animated sprite sheet
+
+```json
+{
+  "type":   "sprite",
+  "asset":  "led_pulse",
+  "width":  64,
+  "height": 64
+}
+```
+
+Cycles through the frames of an `assets.sprites[]` entry at 10 fps
+on a canvas. The `frames` / `frameW` / `frameH` grid comes from
+the manifest sprite declaration; optional `width` / `height` scale
+the canvas.
+
+For richer named-animation control (trigger / chain / idle), use
+`PluginSpriteAnimator` directly — see
+[`20-graphics-assets.md#pluginspriteanimator`](20-graphics-assets.md#pluginspriteanimator).
 
 ## Layout patterns
 

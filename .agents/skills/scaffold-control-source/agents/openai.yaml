@@ -1,0 +1,9 @@
+interface:
+  display_name: "Scaffold Control Source"
+  brand_color: "#e6b84a"
+
+policy:
+  allow_implicit_invocation: true
+
+dependencies:
+  tools: []

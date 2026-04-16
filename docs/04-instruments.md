@@ -338,6 +338,30 @@ and set `noiseType` at the top level.
 | Hybrid — sample body + synth layer | built-in engine handles both |
 | Non-audio thing (game, visualizer, retro console) | webview control, see [`09-webview.md`](09-webview.md) |
 
+## Implicit MIDI ports
+
+Every instrument plugin automatically exposes two extra jacks on
+its window edges:
+
+- `midi-in` (input rail) — cabled MIDI sources drive your voice
+  engine's `noteOn` / `noteOff` hooks.
+- `midi-thru` (output rail) — incoming events pass through to
+  downstream plugins regardless of voice stealing inside yours.
+
+No manifest change, no capability flag. If your plugin shouldn't
+receive MIDI, opt out with `ports.midiIn: false` and/or
+`ports.midiThru: false`. Full reference:
+[`22-midi-ports.md`](22-midi-ports.md).
+
+## Non-audio instrument plugins
+
+If your plugin's job is to emit MIDI (step sequencer, virtual
+keyboard, drum machine, arpeggiator, chord trigger, LFO→CC), set
+`manifest.type` to `"control-source"` instead of `"instrument"`.
+You get the same tracker-row triggering but the implicit port
+shape flips to a single `midi-out` with no audio output
+requirement. See [`23-control-source-plugins.md`](23-control-source-plugins.md).
+
 ## See also
 
 - [`02-parameters.md`](02-parameters.md) — parameter declarations
@@ -345,6 +369,9 @@ and set `noiseType` at the top level.
 - [`05-fx-graphs.md`](05-fx-graphs.md) — same DSP node types in FX
 - [`06-instrument-graphs.md`](06-instrument-graphs.md) — v3 per-voice graphs
 - [`07-audioworklets.md`](07-audioworklets.md) — custom processors
+- [`22-midi-ports.md`](22-midi-ports.md) — MIDI cable layer
+- [`23-control-source-plugins.md`](23-control-source-plugins.md)
+  — MIDI-emitting plugin type
 - [`reference/schema.md`](reference/schema.md) — `PluginInstrumentDsp`
   field reference
 - [`../templates/instrument-sampler/`](../templates/instrument-sampler/)

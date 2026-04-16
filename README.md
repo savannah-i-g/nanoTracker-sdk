@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md"><img alt="Spec version" src="https://img.shields.io/badge/spec-v4.0-ff7a00?style=flat-square&labelColor=140800"></a>
+  <a href="CHANGELOG.md"><img alt="Spec version" src="https://img.shields.io/badge/spec-v5-ff7a00?style=flat-square&labelColor=140800"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"></a>
   <img alt="Node" src="https://img.shields.io/badge/Node-18%2B-3c873a?style=flat-square">
   <img alt="Zero deps" src="https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square">
@@ -29,11 +29,12 @@ host loads them at runtime. Two kinds:
 | Kind | Extension | Renders as | Use for |
 |---|---|---|---|
 | 🎹 **Instruments** | `.ntins` | Floating window OR MOD-style sample pads | Synths, samplers, drum machines, anything that plays notes |
-| 🎛️ **Pedals** (v4) | `.ntsfx` | Floating window with patch-cable jacks | Effects, mixers, sidechain compressors, CV utilities, anything in the workspace patchbay |
+| 🎛️ **Pedals** | `.ntsfx` | Floating window with patch-cable jacks | Effects, mixers, sidechain compressors, CV utilities, anything in the workspace patchbay |
+| 🎛️ **Control sources** | `.ntins` | Floating window with a MIDI OUT jack | Step sequencers, arpeggiators, chord triggers, drum machines — anything whose primary output is MIDI, not audio |
 
-> 🆕 **v4.0 retired the legacy mixer-module FX shape** in favour of
-> workspace pedals with multi-port typed jacks, host-injected output
-> volume, bypass toggle, and a bidirectional webview write channel.
+> **Legacy FX shape retired.** v4.0 replaced the old mixer-module FX
+> shape with workspace pedals (multi-port typed jacks, host-injected
+> output volume, bypass toggle, bidirectional webview write channel).
 > Existing v1–v3 FX plugins auto-migrate to pedals on project load —
 > see [`docs/13-pedals.md#migrating-a-v3-mixer-module-fx-plugin`](docs/13-pedals.md#migrating-a-v3-mixer-module-fx-plugin).
 
@@ -65,14 +66,17 @@ That's the whole loop. Everything in this SDK is detail.
 
 ## 📘 Spec versions
 
-The plugin format is **additive within a major version** — a v4 host
-accepts v1 / v2 / v3 plugins unchanged. v4.0 is the one breaking
-release: it retired the mixer-module FX shape (auto-migrated) but
-left every instrument plugin alone.
+The plugin format is **additive** — each version extends the previous
+without breaking existing plugins. The single breaking point was v4.0,
+which retired the legacy mixer-module FX shape (auto-migrated on
+project load). Every instrument and v3.x plugin still loads unchanged.
 
 | Version | Released | Headline features |
 |---|---|---|
-| **v4.0** ⭐ | 2026-04 | FX **pedals** (workspace + patch cables), unified typed `ports` (audio / sidechain / cv / gate), bidirectional webview bridge (`paramWrite` / `presetLoad` / `noteOn` / `hostCommand`), capability flags `pedal-v4` / `portsV4` / `webview-writes` |
+| **v5** ⭐ | 2026-04 | MIDI cable layer (`kind: "midi"` ports, implicit `midi-in` / `midi-thru` on instruments, priority arbitration), `control-source` plugin type, rich `assets` block (images / sprites / fonts / wavetables), `ui.windowSize`, TrackerBus MIDI pseudos (`__clock-source`, `__ext-midi-in`, `__ext-midi-out`) |
+| v4.2 | 2026-04 | `.ntpreset` distribution format, `loopCrossfade` audible, `autoDetect: "transients"` wired, `exportPreset` / `importPreset` host commands |
+| v4.1 | 2026-04 | `type: "sampler"` graph node, user-assignable sample slots, user preset persistence (project + library scope) |
+| v4.0 | 2026-04 | FX **pedals** (workspace + patch cables), unified typed `ports` (audio / sidechain / cv / gate), bidirectional webview bridge (`paramWrite` / `presetLoad` / `noteOn` / `hostCommand`), capability flags `pedal-v4` / `portsV4` / `webview-writes` |
 | v3.5 | 2026-04 | Per-plugin `ui.themeOverride` (11 colour keys), webview `themeChange` event, `forwardEffects` + `acceptsAudioFrames` finished, BPM-synced LFOs |
 | v3.4 | 2026-04 | `webview` UI control, host↔iframe `postMessage` bridge |
 | v3.3 | 2026-03 | Modulation matrix (multi-target `modRoutes`), tracker effect-column dispatch |
@@ -103,13 +107,20 @@ to `schemaVersion: 4` for new authoring.
 | [`06-instrument-graphs.md`](docs/06-instrument-graphs.md) | v3 per-voice declarative DSP graphs |
 | [`08-worklet-v3.md`](docs/08-worklet-v3.md) | v3 worklet contract |
 
-### 🎛️ Building a pedal (v4)
+### 🎛️ Building a pedal
 
 | Doc | Covers |
 |---|---|
-| [`13-pedals.md`](docs/13-pedals.md) ⭐ | **v4 pedal authoring guide** — workspace topology, multi-port pedals, host-injected chrome, automation |
-| [`14-ports.md`](docs/14-ports.md) ⭐ | **Unified typed ports** (audio / sidechain / cv / gate), compatibility matrix, visual reference |
+| [`13-pedals.md`](docs/13-pedals.md) ⭐ | **Pedal authoring guide** — workspace topology, multi-port pedals, host-injected chrome, automation |
+| [`14-ports.md`](docs/14-ports.md) ⭐ | **Unified typed ports** (audio / sidechain / cv / gate / midi), compatibility matrix, visual reference |
 | [`05-fx-graphs.md`](docs/05-fx-graphs.md) | Declarative DSP node + connection language (shared with instruments) |
+
+### 🎛️ Building a control source (MIDI emitter)
+
+| Doc | Covers |
+|---|---|
+| [`23-control-source-plugins.md`](docs/23-control-source-plugins.md) ⭐ | **Control-source authoring guide** — `manifest.type: "control-source"`, implicit `midi-out`, `songPosition` worklet clock, `midiOut` message contract |
+| [`22-midi-ports.md`](docs/22-midi-ports.md) | MIDI cable layer — `kind: "midi"` ports, implicit instrument ports, priority arbitration, `midi-thru-custom` |
 
 ### 🪟 Embedding HTML / WASM / interactive UIs
 
@@ -141,10 +152,11 @@ to `schemaVersion: 4` for new authoring.
 
 | Example | What it shows |
 |---|---|
+| [`step-sequencer/`](examples/step-sequencer/) ⭐ | `control-source` plugin — 16-step MIDI sequencer with `songPosition` worklet clock and `midiOut` output |
 | [`v40-mixer-pedal/`](examples/v40-mixer-pedal/) ⭐ | 4-in / 2-out stereo mixer pedal with webview faders (`paramWrite`) + theme override |
 | [`v40-compressor-sc/`](examples/v40-compressor-sc/) ⭐ | Compressor with a dedicated `sidechain`-kind input port |
 | [`v40-cv-lfo/`](examples/v40-cv-lfo/) ⭐ | Utility pedal with `cv`-kind output for modulating other plugins |
-| [`v35-showcase/`](examples/v35-showcase/) | v3.5 instrument showcase — every reserved-for-v2 feature finished |
+| [`v35-showcase/`](examples/v35-showcase/) | v3.5 instrument showcase — theme override, granular synth, BPM-synced LFO, webview |
 | [`acid-303/`](examples/acid-303/) | TB-303-flavoured acid bass instrument |
 | [`doom-wasm/`](examples/doom-wasm/) | Full DOOM running inside a webview plugin (GPL-2.0) |
 
@@ -165,9 +177,10 @@ first try, without grepping the codebase.
 | [`AGENTS.md`](AGENTS.md) | Terse must-know rules — Codex / Cursor / Aider convergent convention |
 | [`.github/copilot-instructions.md`](.github/copilot-instructions.md) | GitHub Copilot pointer |
 
-Six skills mirrored across all three agent folders:
+Seven skills mirrored across all three agent folders:
 
-- `scaffold-pedal` — author a v4 pedal from scratch
+- `scaffold-control-source` — author a `control-source` plugin (MIDI emitter)
+- `scaffold-pedal` — author a pedal from scratch
 - `scaffold-instrument` — sample / oscillator / graph instrument
 - `scaffold-webview-pedal` — pedal with custom HTML/JS UI
 - `add-webview` — add a webview to an existing manifest
@@ -198,8 +211,12 @@ plugin-sdk/
 │   ├── 10-wasm-in-webview.md     ★ DOOM walkthrough
 │   ├── 11-packaging.md
 │   ├── 12-webview-audio.md       v3.5 PCM route-back
-│   ├── 13-pedals.md              ★ v4 pedal authoring guide
-│   ├── 14-ports.md               ★ v4 unified typed ports
+│   ├── 13-pedals.md              ★ pedal authoring guide
+│   ├── 14-ports.md               ★ unified typed ports (incl. midi kind)
+│   ├── 20-graphics-assets.md     ★ rich assets block (images/sprites/fonts/…)
+│   ├── 21-window-sizing.md       ui.windowSize
+│   ├── 22-midi-ports.md          ★ MIDI cable layer
+│   ├── 23-control-source-plugins.md  ★ control-source plugin type
 │   └── reference/
 │       ├── schema.md
 │       ├── event-bus.md
@@ -215,14 +232,16 @@ plugin-sdk/
 ├── templates/                copy-to-start starter plugins
 │   ├── instrument-sampler/
 │   ├── instrument-worklet/
-│   ├── fx-graph/                   ★ v4 pedal starter
+│   ├── control-source/             ★ MIDI-emitter (control-source) starter
+│   ├── fx-graph/                   ★ pedal starter
 │   └── webview/
 │
 ├── examples/                 fully-worked larger examples
+│   ├── step-sequencer/             ★ control-source MIDI sequencer
 │   ├── v40-mixer-pedal/            ★ 4-in mixer + webview faders
 │   ├── v40-compressor-sc/          ★ sidechain port
 │   ├── v40-cv-lfo/                 ★ CV output port
-│   ├── v35-showcase/               every v3.5 feature
+│   ├── v35-showcase/               v3.5 feature showcase
 │   ├── acid-303/                   acid bass
 │   └── doom-wasm/                  DOOM as a plugin (GPL-2.0)
 │

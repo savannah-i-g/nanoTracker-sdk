@@ -1,4 +1,4 @@
-# Sampler node (v4.1)
+# Sampler node
 
 The `type: "sampler"` graph node is the canonical way to author a
 plugin that uses samples as its sound source. One schema covers:
@@ -56,7 +56,7 @@ hands out the output GainNode.
 ## Zones
 
 Sampler zones share their shape with instrument-level
-`dsp.samples[]` and get the v4.1 additions:
+`dsp.samples[]` and support the following fields:
 
 - **`pitchTracking: false`** — fixed playback rate regardless of
   note. Every drum zone should set this; pitched instrument zones
@@ -68,9 +68,9 @@ Sampler zones share their shape with instrument-level
   `noteOff` instead of `noteOn`. Use for piano / Rhodes release
   samples that ring the hammer settling on the string.
 - **`loopCrossfade`** — equal-power fade across the loop seam,
-  seconds. Set to ~2–10 ms to hide clicks on sustained loops. v4.2
-  pre-bakes the cos/sin blend into a cached buffer so native Web
-  Audio looping produces a smooth seam with no runtime scheduling.
+  seconds. Set to ~2–10 ms to hide clicks on sustained loops. The
+  host pre-bakes the cos/sin blend into a cached buffer so native
+  Web Audio looping produces a smooth seam with no runtime scheduling.
 - **`roundRobinGroup`** — zones sharing a group name rotate on
   successive triggers. Puts three recorded snare hits on the same
   pad so they don't feel mechanical.
@@ -122,16 +122,15 @@ the key is held; the default one-shot plays each slice to its end.
 Declaring a `sliceMap` requires the `sliceMap-v41` capability in
 addition to `sampler-v41`.
 
-Auto-detect modes (all wired as of v4.2):
+Auto-detect modes:
 
 - `"grid:N"` — uniform division into N slices.
-- `"markers"` — read the source WAV's `cue ` chunk. v4.2 honours
-  markers even when the source isn't attached to a zone (the
-  loader surfaces a path-keyed metadata map on `LoadedPlugin` that
-  the sampler runtime consults).
+- `"markers"` — read the source WAV's `cue ` chunk. Honoured even
+  when the source isn't attached to a zone (the loader surfaces a
+  path-keyed metadata map on `LoadedPlugin` that the sampler runtime
+  consults).
 - `"transients"` — spectral-energy-flux onset detection with
   moving-median normalisation and a 40 ms minimum inter-onset gap.
-  Phase A's `grid:16` fallback is retired.
 
 ## WAV metadata
 
@@ -185,12 +184,10 @@ engines) can still drop to `type: "worklet"` and receive samples
 through the v3 `loadAsset` port message. The declarative sampler
 primitive is the default; worklets are for the unusual case.
 
-## What's deferred
+## Related docs
 
-- **User-supplied samples** (drop-your-own-WAV slots) — Phase B
-  (v4.1.1).
-- **Preset-to-sample binding** (factory presets that specify which
-  WAV goes in which slot) — Phase C (v4.1.2).
-- **`.ntpreset` distribution format** — v4.2.
-
-See [`../CHANGELOG.md`](../CHANGELOG.md) for the full phase breakdown.
+- [`17-user-samples.md`](../17-user-samples.md) — user-assignable
+  sample slots (`userAssignable` zones, `sampleBank` block, webview
+  picker bridge)
+- [`18-preset-bank.md`](../18-preset-bank.md) — factory presets with
+  `sampleAssignments`, user preset persistence, `.ntpreset` sharing

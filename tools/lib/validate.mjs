@@ -152,8 +152,8 @@ export async function preflightPlugin(pluginJson, sourceDir) {
   } else {
     if (typeof m.name !== "string"    || !m.name.trim())    issues.push(`manifest.name is required (non-empty string)`);
     if (typeof m.version !== "string" || !m.version.trim()) issues.push(`manifest.version is required (non-empty string)`);
-    if (m.type !== "instrument" && m.type !== "fx") {
-      issues.push(`manifest.type must be "instrument" or "fx" (got ${JSON.stringify(m.type)})`);
+    if (m.type !== "instrument" && m.type !== "fx" && m.type !== "control-source") {
+      issues.push(`manifest.type must be "instrument" | "fx" | "control-source" (got ${JSON.stringify(m.type)})`);
     }
   }
 
@@ -248,8 +248,8 @@ export async function preflightPlugin(pluginJson, sourceDir) {
     }
   }
 
-  // ── ports (v4) ─────────────────────────────────────────────
-  const PORT_KINDS = new Set(["audio", "sidechain", "cv", "gate"]);
+  // ── ports (v4+) ────────────────────────────────────────────
+  const PORT_KINDS = new Set(["audio", "sidechain", "cv", "gate", "midi"]);
   const ports = pluginJson.ports;
   const requires = Array.isArray(pluginJson.requires) ? pluginJson.requires : [];
   const isV4Plus = typeof pluginJson.schemaVersion === "number" && pluginJson.schemaVersion >= 4;
@@ -296,6 +296,37 @@ export async function preflightPlugin(pluginJson, sourceDir) {
       };
       validatePortList(ports.inputs,  "inputs");
       validatePortList(ports.outputs, "outputs");
+
+      // v5: ports.midiIn / ports.midiThru — implicit-port opt-out
+      // flags. Only meaningful on instrument plugins; the loader
+      // ignores them on other types but warn so authors don't
+      // accidentally copy the flag onto a pedal.
+      for (const flagKey of ["midiIn", "midiThru"]) {
+        if (Object.prototype.hasOwnProperty.call(ports, flagKey)) {
+          const flagVal = ports[flagKey];
+          if (typeof flagVal !== "boolean") {
+            issues.push(`ports.${flagKey} must be a boolean (true / false)`);
+          } else if (m && m.type !== "instrument") {
+            issues.push(`ports.${flagKey} is only meaningful on instrument plugins — implicit MIDI ports are not injected on ${JSON.stringify(m.type)} plugins`);
+          }
+        }
+      }
+    }
+  }
+
+  // ── v5 control-source manifest expectations ────────────────
+  //
+  // Control-source plugins emit MIDI. Their implicit midi-out is
+  // auto-injected by the host, but if the manifest declared a
+  // ports.outputs block and didn't include an audio or midi entry,
+  // warn — the plugin is likely mis-configured.
+  if (m && m.type === "control-source") {
+    if (ports && typeof ports === "object" && Array.isArray(ports.outputs) && ports.outputs.length > 0) {
+      const hasMidiOut = ports.outputs.some(p => p && p.kind === "midi");
+      const hasAudioOut = ports.outputs.some(p => p && (p.kind === "audio" || p.kind === "sidechain"));
+      if (!hasMidiOut && !hasAudioOut) {
+        issues.push(`control-source plugins should declare at least one midi-kind output (or audio preview) in ports.outputs[] — otherwise the plugin has no way to emit`);
+      }
     }
   }
 
@@ -544,6 +575,182 @@ export async function preflightPlugin(pluginJson, sourceDir) {
     }
   }
 
+  // ── v5 assets block ────────────────────────────────────────
+  //
+  // Top-level `assets` bundle. Every category is optional; the
+  // validator checks id uniqueness across categories, file field
+  // presence, and (where it can) that the referenced file exists on
+  // disk. Runtime decoders are non-fatal at load time, but authoring-
+  // time typos in asset ids are easy to miss — flag them here.
+  const assetsRaw = pluginJson.assets;
+  if (assetsRaw !== undefined && assetsRaw !== null) {
+    if (typeof assetsRaw !== "object" || Array.isArray(assetsRaw)) {
+      issues.push(`assets must be an object (got ${Array.isArray(assetsRaw) ? "array" : typeof assetsRaw})`);
+    } else {
+      const seenAssetIds = new Map();                           // id → where
+      const checkFile = (file, where) => {
+        if (typeof file !== "string" || !file.trim()) {
+          issues.push(`${where}.file is required (non-empty string)`);
+          return;
+        }
+        if (sourceDir) {
+          const abs = isAbsolute(file) ? file : resolve(sourceDir, file);
+          if (!existsSync(abs)) {
+            issues.push(`${where}.file "${file}" not found at ${abs}`);
+          }
+        }
+      };
+      const checkId = (id, where) => {
+        if (typeof id !== "string" || !id.trim()) {
+          issues.push(`${where}.id is required (non-empty string)`);
+          return;
+        }
+        if (id.startsWith("__")) {
+          issues.push(`${where}.id "${id}" — ids starting with "__" are reserved for the host`);
+          return;
+        }
+        const prev = seenAssetIds.get(id);
+        if (prev) issues.push(`asset id "${id}" is duplicated (first at ${prev}, again at ${where})`);
+        else seenAssetIds.set(id, where);
+      };
+
+      for (const [i, def] of (assetsRaw.images ?? []).entries()) {
+        checkId(def?.id, `assets.images[${i}]`);
+        checkFile(def?.file, `assets.images[${i}]`);
+      }
+      for (const [i, def] of (assetsRaw.sprites ?? []).entries()) {
+        const where = `assets.sprites[${i}]`;
+        checkId(def?.id, where);
+        checkFile(def?.file, where);
+        if (!(Number.isFinite(def?.frames)  && def.frames  > 0)) issues.push(`${where}.frames must be a positive integer`);
+        if (!(Number.isFinite(def?.frameW)  && def.frameW  > 0)) issues.push(`${where}.frameW must be a positive integer`);
+        if (!(Number.isFinite(def?.frameH)  && def.frameH  > 0)) issues.push(`${where}.frameH must be a positive integer`);
+        if (def?.tint !== undefined && (typeof def.tint !== "string" || !def.tint.trim())) {
+          issues.push(`${where}.tint must be a non-empty theme-key string when set`);
+        }
+      }
+      for (const [i, def] of (assetsRaw.svg ?? []).entries()) {
+        checkId(def?.id, `assets.svg[${i}]`);
+        checkFile(def?.file, `assets.svg[${i}]`);
+      }
+      for (const [i, def] of (assetsRaw.fonts ?? []).entries()) {
+        const where = `assets.fonts[${i}]`;
+        checkId(def?.id, where);
+        checkFile(def?.file, where);
+        if (typeof def?.family !== "string" || !def.family.trim()) {
+          issues.push(`${where}.family is required (non-empty string)`);
+        }
+      }
+      for (const [i, def] of (assetsRaw.wavetables ?? []).entries()) {
+        checkId(def?.id, `assets.wavetables[${i}]`);
+        checkFile(def?.file, `assets.wavetables[${i}]`);
+      }
+      for (const [i, def] of (assetsRaw.data ?? []).entries()) {
+        checkId(def?.id, `assets.data[${i}]`);
+        checkFile(def?.file, `assets.data[${i}]`);
+      }
+      if (assetsRaw.icon !== undefined && assetsRaw.icon !== null) {
+        if (typeof assetsRaw.icon !== "object" || Array.isArray(assetsRaw.icon)) {
+          issues.push(`assets.icon must be an object { file: string }`);
+        } else {
+          checkFile(assetsRaw.icon.file, "assets.icon");
+        }
+      }
+
+      // UI controls referencing asset ids
+      const collectAssetRefs = (controls) => {
+        const refs = [];
+        const walk = (list) => {
+          if (!Array.isArray(list)) return;
+          for (const c of list) {
+            if (!c || typeof c !== "object") continue;
+            if (c.type === "image" || c.type === "sprite") {
+              if (typeof c.asset === "string") refs.push({ asset: c.asset, type: c.type });
+            }
+            if (Array.isArray(c.children)) walk(c.children);
+          }
+        };
+        walk(controls);
+        return refs;
+      };
+      const ui = pluginJson.ui;
+      if (ui && Array.isArray(ui.controls)) {
+        for (const ref of collectAssetRefs(ui.controls)) {
+          const inImages  = (assetsRaw.images  ?? []).some(a => a?.id === ref.asset);
+          const inSprites = (assetsRaw.sprites ?? []).some(a => a?.id === ref.asset);
+          if (ref.type === "image" && !inImages) {
+            issues.push(`ui control type "image" references asset "${ref.asset}" but no such entry in assets.images[]`);
+          } else if (ref.type === "sprite" && !inSprites) {
+            issues.push(`ui control type "sprite" references asset "${ref.asset}" but no such entry in assets.sprites[]`);
+          }
+        }
+      }
+    }
+  }
+
+  // ── v5 ui.windowSize ───────────────────────────────────────
+  const ws = pluginJson.ui && pluginJson.ui.windowSize;
+  if (ws !== undefined && ws !== null) {
+    if (typeof ws !== "object" || Array.isArray(ws)) {
+      issues.push(`ui.windowSize must be an object`);
+    } else {
+      const positiveDim = (dim, where) => {
+        if (dim === undefined) return;
+        if (!dim || typeof dim !== "object") {
+          issues.push(`${where} must be an object { w, h }`);
+          return;
+        }
+        if (!(Number.isFinite(dim.w) && dim.w > 0)) issues.push(`${where}.w must be a positive number`);
+        if (!(Number.isFinite(dim.h) && dim.h > 0)) issues.push(`${where}.h must be a positive number`);
+      };
+      positiveDim(ws.default, "ui.windowSize.default");
+      positiveDim(ws.min,     "ui.windowSize.min");
+      positiveDim(ws.max,     "ui.windowSize.max");
+
+      const mn = ws.min, df = ws.default, mx = ws.max;
+      if (mn && df && Number.isFinite(mn.w) && Number.isFinite(df.w) && mn.w > df.w) {
+        issues.push(`ui.windowSize.min.w (${mn.w}) > default.w (${df.w}) — default must be between min and max`);
+      }
+      if (mn && df && Number.isFinite(mn.h) && Number.isFinite(df.h) && mn.h > df.h) {
+        issues.push(`ui.windowSize.min.h (${mn.h}) > default.h (${df.h}) — default must be between min and max`);
+      }
+      if (df && mx && Number.isFinite(df.w) && Number.isFinite(mx.w) && df.w > mx.w) {
+        issues.push(`ui.windowSize.default.w (${df.w}) > max.w (${mx.w}) — default must be between min and max`);
+      }
+      if (df && mx && Number.isFinite(df.h) && Number.isFinite(mx.h) && df.h > mx.h) {
+        issues.push(`ui.windowSize.default.h (${df.h}) > max.h (${mx.h}) — default must be between min and max`);
+      }
+      if (mn && mx && Number.isFinite(mn.w) && Number.isFinite(mx.w) && mn.w > mx.w) {
+        issues.push(`ui.windowSize.min.w (${mn.w}) > max.w (${mx.w}) — min must be ≤ max`);
+      }
+      if (mn && mx && Number.isFinite(mn.h) && Number.isFinite(mx.h) && mn.h > mx.h) {
+        issues.push(`ui.windowSize.min.h (${mn.h}) > max.h (${mx.h}) — min must be ≤ max`);
+      }
+
+      if (ws.resizable !== undefined && typeof ws.resizable !== "boolean") {
+        issues.push(`ui.windowSize.resizable must be a boolean`);
+      }
+      if (ws.hideResizeHandle !== undefined && typeof ws.hideResizeHandle !== "boolean") {
+        issues.push(`ui.windowSize.hideResizeHandle must be a boolean`);
+      }
+      if (ws.aspectRatio !== undefined && ws.aspectRatio !== null) {
+        let parsed = NaN;
+        if (typeof ws.aspectRatio === "number") parsed = ws.aspectRatio;
+        else if (typeof ws.aspectRatio === "string") {
+          if (ws.aspectRatio.includes("/")) {
+            const [a, b] = ws.aspectRatio.split("/").map(s => parseFloat(s.trim()));
+            if (a > 0 && b > 0) parsed = a / b;
+          } else {
+            parsed = parseFloat(ws.aspectRatio);
+          }
+        }
+        if (!(Number.isFinite(parsed) && parsed > 0)) {
+          issues.push(`ui.windowSize.aspectRatio must be a positive number or "W/H" string (got ${JSON.stringify(ws.aspectRatio)})`);
+        }
+      }
+    }
+  }
+
   // ── requires[] capability sanity ───────────────────────────
   // The set below is the current nanoTracker host capability list.
   // When a new flag ships, update this set and docs/reference/host-capabilities.md.
@@ -573,6 +780,9 @@ export async function preflightPlugin(pluginJson, sourceDir) {
     // v3.6
     "midi-cc",
     "consumes-song-position",
+    // v5 — MIDI cables + rich assets
+    "midi-thru-custom",
+    "assets",
   ]);
   if (Array.isArray(pluginJson.requires)) {
     for (const cap of pluginJson.requires) {

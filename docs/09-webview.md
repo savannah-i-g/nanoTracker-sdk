@@ -155,6 +155,39 @@ flags on the control decide which event classes reach the iframe.
 swaps). If you only care about parameter automation (e.g., a knob
 visualizer), set `forwardNotes: false` to save postMessage bandwidth.
 
+### Rich assets catalogue (`assetsAvailable` / `fontsAvailable`)
+
+When the plugin manifest declares an `assets` block, the host posts
+a single `assetsAvailable` message on `__nt_ready` carrying a map
+of every decoded asset keyed by manifest id:
+
+```js
+case "assetsAvailable":
+  // ev.assets = { [id]: { kind, url, meta? } }
+  // kind: "image" | "sprite" | "svg" | "wavetable" | "data"
+  // url:  same-origin blob ObjectURL (iframes can <img src=url> directly)
+  // meta: per-kind metadata — frames/frameW/frameH for sprites, parsed
+  //       JSON body for wavetable/data, w/h for images.
+  const logo = ev.assets.logo;
+  if (logo) document.getElementById("brand").src = logo.url;
+
+  const spr = ev.assets.led_pulse;
+  // spr.meta = { frames, frameW, frameH, tint? }
+  break;
+```
+
+Fonts are announced separately via `fontsAvailable`:
+
+```js
+case "fontsAvailable":
+  // ev.fonts = [{ id, family }, ...]
+  // Register in the iframe's own FontFaceSet by declaring @font-face
+  // blocks that reference the URL from assetsAvailable[id].
+  break;
+```
+
+Full asset reference: [`20-graphics-assets.md`](20-graphics-assets.md).
+
 ### Picking up theme colours inside the iframe (v3.5)
 
 The host posts a `themeChange` event shortly after the ready handshake
@@ -306,7 +339,7 @@ case "songPosition": /*
     beatsSinceStart,    // float — for phase-coherent modulation
     audioTime, performanceTime,
   }
-  ev.ppq = 24             // reserved for future non-24 PPQN hosts
+  ev.ppq = 24             // PPQN; always 24 for current hosts
 */ break;
 ```
 
@@ -315,35 +348,30 @@ its own clock. Don't use it as a replacement for `noteOn` — notes are
 still the right primitive for per-step triggers. Use `beatsSinceStart`
 for continuous phase and `ppq24Counter` for quantised subdivision.
 
-### Webview patch cables (v4.1, opt-in)
+### Webview patch cables (opt-in)
 
 Plugins with sub-modules inside their webview UI can surface
 additional workspace jacks via the `webview-ports` capability +
 `ports.webviewExposable[]` manifest block. See
-[`docs/15-webview-ports.md`](15-webview-ports.md) (shipping with
-Phase 4 of the current upgrade) for the protocol.
+[`docs/15-webview-ports.md`](15-webview-ports.md) for the protocol.
 
 **The `presetList` event.** The host posts the current preset catalogue
 as a `{type:"presetList", presets:[{id,name},…]}` event after the
 ready handshake (when the plugin authors at least one factory
-preset). v4.0 fires it once on mount; v4.1 will refire after every
-`presetSave` and on project reload.
+preset). The event also re-fires after every `presetSave` and on
+project reload.
 See [`reference/event-bus.md`](reference/event-bus.md#presetlist-v4).
 
-### v4.0 implementation status
+### Bridge message support
 
-| Message | v4.0 |
+| Message | Status |
 |---|---|
-| `paramWrite` | ✅ wired into the workspace; param updates take effect immediately and persist through save/load |
-| `noteOn` / `noteOff` | ✅ dispatched into the plugin's voice engine exactly as if the user played them from the tracker keyboard |
-| `presetLoad` | ✅ resolves `"preset-N"` (numeric index) or a factory preset by name and applies it to the plugin |
-| `presetList` (host→iframe) | ✅ fired once on iframe mount when the plugin has factory presets |
-| `presetSave` | ⚠️ validated and acknowledged but the host doesn't yet persist user-saved presets — reserved for v4.1 |
-| `hostCommand` | ⚠️ validated against the whitelist; the v4.0 host dispatcher is not wired so commands no-op silently — reserved for v4.1 |
-
-Plugin authors can declare `acceptsPresetWrites` / `acceptsHostCommands`
-today and the bridge stays well-typed; just don't depend on the
-presetSave/hostCommand side effects landing in v4.0.
+| `paramWrite` | Wired into the workspace; param updates take effect immediately and persist through save/load |
+| `noteOn` / `noteOff` | Dispatched into the plugin's voice engine exactly as if the user played them from the tracker keyboard |
+| `presetLoad` | Resolves `"preset-N"` (numeric index) or a factory preset by name and applies it to the plugin |
+| `presetList` (host→iframe) | Fired on iframe mount when the plugin has factory presets; also re-fires after every save/delete |
+| `presetSave` | Persists user presets; requires `presetBank-v4` + `webview-writes`. See [`18-preset-bank.md`](18-preset-bank.md). |
+| `hostCommand` | Dispatched to the host command router; requires `webview-writes` + `acceptsHostCommands`. Unknown commands return `__nt_error`. |
 
 ---
 

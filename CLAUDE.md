@@ -17,28 +17,29 @@ Three kinds, roughly:
 | Kind | `manifest.type` | What it is |
 |---|---|---|
 | **Instrument** | `"instrument"` | Plays notes; appears as a workspace floating window OR a tracker MOD-style instrument with sample pads |
-| **Pedal** (v4) | `"fx"` | Audio processor (or utility, mixer, CV source…). Floating window with patch-cable jacks; lives in the workspace |
+| **Pedal** | `"fx"` | Audio processor (or utility, mixer, CV source…). Floating window with patch-cable jacks; lives in the workspace |
+| **Control source** | `"control-source"` | MIDI emitter — step sequencer, arpeggiator, chord trigger, drum machine. Gets an implicit `midi-out` port. See [`docs/23-control-source-plugins.md`](docs/23-control-source-plugins.md) |
 | **(Legacy FX)** | `"fx"` (v1–v3) | Old mixer-module shape — **don't author new ones**. The host auto-migrates existing v1–v3 FX to pedals at project load |
 
 ## Spec versions in play
 
-- **v4.2** (current) — definitive sampler + patch-distribution pass.
-  Closes every Phase A/B/C caveat: `loopCrossfade` is audible,
-  `autoDetect: "transients"` is wired, `"markers"` works on slice-
-  map sources, preset-load metadata is accurate, missing blobs
-  surface as `__nt_error`. Adds `.ntpreset` distribution format
-  (zip containing `preset.json` + content-hashed sample blobs) with
-  `hostCommand: "exportPreset" | "importPreset"` + a
-  `presetImported` iframe event. See
-  [`docs/19-ntpreset.md`](docs/19-ntpreset.md).
-- v4.1 — sampler primitive (Phase A), user-assignable slots
-  (Phase B), user preset persistence (Phase C). See
+- **v5** (current) — MIDI cable layer (`kind: "midi"` ports, implicit
+  `midi-in` / `midi-thru` on instruments), `control-source` plugin
+  type, rich `assets` block (images / sprites / fonts / wavetables /
+  data), `ui.windowSize`, TrackerBus MIDI pseudos. See
+  [`docs/22-midi-ports.md`](docs/22-midi-ports.md),
+  [`docs/23-control-source-plugins.md`](docs/23-control-source-plugins.md).
+- v4.2 — `.ntpreset` distribution format, `loopCrossfade` audible,
+  `autoDetect: "transients"` wired, `exportPreset` / `importPreset`
+  host commands. See [`docs/19-ntpreset.md`](docs/19-ntpreset.md).
+- v4.1 — unified sampler primitive, user-assignable sample slots,
+  user preset persistence. See
   [`docs/16-sampler-node.md`](docs/16-sampler-node.md),
   [`docs/17-user-samples.md`](docs/17-user-samples.md),
   [`docs/18-preset-bank.md`](docs/18-preset-bank.md).
 - v4.0 — typed ports, pedals, bidirectional webview bridge.
 - v3.5, v3.4, v3.3, …, v1 — older versions still load. New plugins
-  should target v4 unless you have a reason.
+  should target v4+ unless you have a reason.
 
 `schemaVersion: 4` is the right default for new work. Sampler-based
 plugins add `"sampler-v41"` to `requires[]`; kits that ship user
@@ -129,7 +130,7 @@ for single-port pedals.
 | `audio` | standard `srcNode.connect(dstNode)` | Normal audio signal |
 | `sidechain` | electrically same as audio, dashed jack | Compressor key, vocoder formant, ducker trigger |
 | `cv` | `srcNode.connect(targetParam)` | Audio-rate control of an `AudioParam`. Requires `target` |
-| `gate` | host-side edge watcher around 0.5 | Boolean trigger. **v4.0 caveat:** gate INPUT only works for worklet plugins; declarative graphs should use `kind:"audio"` and threshold internally |
+| `gate` | host-side edge watcher around 0.5 | Boolean trigger. Gate INPUT requires a worklet processor; declarative graphs should use `kind:"audio"` and threshold internally |
 
 Compatibility matrix in [`docs/14-ports.md`](docs/14-ports.md).
 
@@ -167,8 +168,8 @@ window.parent.postMessage({ type: "presetLoad", presetId: "preset-0" },        "
 ```
 
 Validation is automatic — invalid writes drop with an `__nt_error`
-back into the iframe. v4.0 status matrix lives in
-[`docs/09-webview.md`](docs/09-webview.md#v40-implementation-status).
+back into the iframe. Full bridge message reference in
+[`docs/09-webview.md`](docs/09-webview.md).
 
 ## Workspace topology (mental model)
 
@@ -200,7 +201,9 @@ archive → `+ ADD TO WS` → drag cables.
 
 ## Skills available in `.claude/skills/`
 
-- `scaffold-pedal` — scaffold a v4 pedal with the right manifest +
+- `scaffold-control-source` — scaffold a `control-source` plugin
+  (MIDI emitter: step sequencer, arpeggiator, chord trigger…)
+- `scaffold-pedal` — scaffold a pedal with the right manifest +
   capability flags + port shape
 - `scaffold-instrument` — scaffold a v3/v4 instrument plugin (sample
   zones, oscillators, or graph engine)

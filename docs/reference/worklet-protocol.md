@@ -103,9 +103,9 @@ entry like:
 { "key": "synth.drive", "label": "DRIVE", "min": 0, "max": 1, "default": 0.5, "step": 0.01 }
 ```
 
-The Phase 1 loader does not enforce this mirror — it is convention.
-The Phase 3 loader will validate that every declared `parameterDescriptor`
-either appears in `parameters[]` or is documented as host-internal.
+The host does not enforce this mirror at load time — it is convention.
+`ntvalidate` warns if a `parameterDescriptor` key has no corresponding
+entry in `parameters[]` and is not documented as host-internal.
 
 ---
 

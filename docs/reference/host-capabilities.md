@@ -29,8 +29,10 @@ Instrument plugins can **also** declare capabilities under
 | `sampler-v41` | v4.1 | unified `type: "sampler"` graph node + v4.1 zone features (`pingpong` / `release` loop modes, `loopCrossfade`, `roundRobinGroup`, `choke`, `trigger: "release"`, `pitchTracking: false`). |
 | `sliceMap-v41` | v4.1 | sampler-node `sliceMap` block (author slices + `autoDetect: "markers"/"grid:N"/"transients"`). |
 | `sampleMeta-v41` | v4.1 | zone-level `meta` block surfaced to the plugin (original tempo / root key / cue markers extracted from WAV chunks). |
-| `userSamples` | v4.1 Phase B | user-assignable sample slots (`userAssignable` / `slotId` / `fallbackFile` on zones, `sampleBank` block, `openSamplePicker` + `clearSampleSlot` host commands, `sampleAssigned` + `sampleSlots` iframe events, POVR `.ftrk` persistence). |
-| `presetBank-v4` | v4.1 Phase C | user preset persistence — webview `presetSave` with `scope: "project"|"library"`, `presetDelete`, `sampleAssignments` on factory + user presets, `.ftrk` PPRS block, per-plugin IndexedDB preset library. |
+| `userSamples` | v4.1 | user-assignable sample slots (`userAssignable` / `slotId` / `fallbackFile` on zones, `sampleBank` block, `openSamplePicker` + `clearSampleSlot` host commands, `sampleAssigned` + `sampleSlots` iframe events, POVR `.ftrk` persistence). |
+| `presetBank-v4` | v4.1 | user preset persistence — webview `presetSave` with `scope: "project"|"library"`, `presetDelete`, `sampleAssignments` on factory + user presets, `.ftrk` PPRS block, per-plugin IndexedDB preset library. |
+| `midi-thru-custom` | v5 | opt-out of the host's default midi-in → midi-thru pass-through; plugin's worklet owns emission via the `midiOut` message. See [`../22-midi-ports.md`](../22-midi-ports.md). |
+| `assets` | v5 | plugin declares a top-level `assets` block and references asset ids from UI controls or the webview bridge. See [`../20-graphics-assets.md`](../20-graphics-assets.md). |
 
 ## Detailed reference
 
@@ -232,8 +234,7 @@ Enables a sampler node's `sliceMap` block — breakbeat-style chopping
 where a single WAV is divided into N slices and each slice plays on
 a consecutive MIDI note. Supports author-supplied `slices[]` and the
 auto-detect modes `"markers"` (read WAV cue chunk), `"grid:N"`
-(divide uniformly), and `"transients"` (onset detection; Phase A
-falls back to grid:16 if the detector isn't shipped yet).
+(divide uniformly), and `"transients"` (onset detection).
 
 **Triggers failure when**: a sampler node has a `sliceMap` and
 `requires` is missing `"sliceMap-v41"`.
@@ -317,6 +318,43 @@ why the pre-flight check runs ahead of you shipping the archive.
 The check runs twice per plugin load: once on the top-level
 `requires[]` and once on `dsp.requires[]` for instrument plugins.
 Both are validated; either can contain the full set.
+
+### `midi-thru-custom`
+
+Turns off the host's default behaviour of re-emitting every event
+arriving at the plugin's `midi-in` on its `midi-thru` port. When
+declared, your worklet is responsible for sending outgoing events
+via the `{type: "midiOut", event}` message on the worklet port.
+
+**Triggers failure when**: nothing — the flag is purely behavioural
+and the loader accepts plugins with or without it. Host surfaces
+a console warning if a plugin declares the capability but emits
+no `midiOut` messages over many incoming events (the "plugin may
+be swallowing MIDI" watchdog).
+
+**Use for**: arpeggiators, MIDI delays, scale quantisers, chord
+triggers — any plugin that transforms the incoming MIDI stream
+rather than passing it through unchanged.
+
+**See**: [`../22-midi-ports.md#custom-thru-midi-thru-custom`](../22-midi-ports.md#custom-thru-midi-thru-custom)
+
+### `assets`
+
+Signals that the plugin declares a top-level `assets` block and
+expects the decoded asset bundle to be available to its UI and /
+or webview. The loader accepts the `assets` block without this
+flag too, but declaring it:
+
+- Lets `ntvalidate` catch missing asset references in UI
+  controls at pack time.
+- Makes the dependency explicit in the plugin's `requires[]` for
+  tooling that inspects capability usage.
+
+**Triggers failure when**: nothing at load time. Validator warns if
+UI controls of type `image` / `sprite` reference asset ids that
+don't exist in the `assets` block.
+
+**See**: [`../20-graphics-assets.md`](../20-graphics-assets.md)
 
 ## Future capabilities
 

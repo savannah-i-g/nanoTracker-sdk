@@ -1,4 +1,4 @@
-# Webview patch-cable ports (v4.1)
+# Webview patch-cable ports
 
 If your plugin's webview UI hosts multiple internal sub-modules that
 each want their own cable endpoint on the workspace (think: a mini-rack

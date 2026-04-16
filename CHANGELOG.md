@@ -16,6 +16,152 @@ history, see `git log` in the main repo.
 
 ---
 
+## v5 — MIDI cables, rich assets, window sizing, control-source type
+
+Five additive feature lines. No `schemaVersion` bump — every
+existing v1–v4 plugin continues to load unchanged, and the new
+features gate on presence of the relevant manifest blocks rather
+than on a version number.
+
+### New: MIDI cable layer (`kind: "midi"`)
+
+Patch cables now carry a fifth kind alongside `audio` / `sidechain`
+/ `cv` / `gate`. MIDI cables are message-passing (not Web Audio
+edges) and transport a typed `TrackerMidiEvent` stream.
+
+- Every `manifest.type === "instrument"` plugin gains two
+  implicit ports: `midi-in` and `midi-thru`. Existing plugins pick
+  them up automatically — no manifest change, no capability flag.
+- Opt out via `ports.midiIn: false` / `ports.midiThru: false`.
+- When a cable is connected to an instrument's `midi-in`, cable
+  events take priority over tracker row noteOns on the same
+  instance. Note-offs always pass through as a safety catch.
+- Default thru is **lossless** — the host adapter re-emits every
+  incoming event on `midi-thru` *before* forwarding to the voice
+  engine, so chains like `kb → instA → instB → instC` deliver
+  every event to all three regardless of voice stealing.
+- Declare `requires: ["midi-thru-custom"]` to own emission from a
+  worklet (arpeggiators, chord triggers, MIDI delays).
+- Cycle tolerance via per-event `hops` counter (default 32, max
+  256) — deliberate MIDI-feedback patches work without infinite
+  loops.
+
+Full reference: [`docs/22-midi-ports.md`](docs/22-midi-ports.md).
+
+### New: control-source plugin type (`manifest.type: "control-source"`)
+
+A third plugin type alongside `"instrument"` and `"fx"`. Control-
+source plugins emit MIDI over cables instead of audio — step
+sequencers, virtual keyboards, drum machines, arpeggiators,
+chord triggers, LFO-to-CC emitters.
+
+- Tracker rows still trigger them exactly like instruments — the
+  plugin converts the trigger into whatever MIDI it wants to emit.
+- Implicit `midi-out` port is injected at load time unless the
+  manifest declares one explicitly.
+- No audio output required; `engine.output` falls back to a
+  silent GainNode.
+- Worklet plugins emit via `this.port.postMessage({type: "midiOut", event})`;
+  the host forwards to the plugin's first `midi-out` endpoint.
+
+Full reference: [`docs/23-control-source-plugins.md`](docs/23-control-source-plugins.md).
+
+### New: rich assets (`assets` manifest block)
+
+Plugins can now ship images, animated sprite sheets, SVG, custom
+fonts, JSON wavetables, and arbitrary JSON data alongside sample
+files. All assets decode once at load time and surface via
+stable ids.
+
+- `assets.images[]` — `createImageBitmap` + ObjectURL.
+- `assets.sprites[]` — sprite sheet with `frames` / `frameW` /
+  `frameH` grid, optional `tint` theme-key for opt-in colourisation.
+  The `PluginSpriteAnimator` primitive supports keyed named
+  animations (trigger / chain / idle) matching the DataBeat / VFX
+  animator lineage.
+- `assets.svg[]` — text + ObjectURL.
+- `assets.fonts[]` — `FontFace` registration; webviews get a
+  `fontsAvailable` message announcing every registered family.
+- `assets.wavetables[]` / `assets.data[]` — parsed JSON.
+- `assets.icon` — shorthand for the instrument-slot picker icon.
+
+New UI control types: `image` and `sprite`. New webview bridge
+messages: `assetsAvailable` and `fontsAvailable` on `__nt_ready`.
+
+Full reference: [`docs/20-graphics-assets.md`](docs/20-graphics-assets.md).
+
+### New: manifest-declared window sizing (`ui.windowSize`)
+
+Plugins can declare their window envelope — default / min / max /
+resizable / aspectRatio / hideResizeHandle. The host honours the
+manifest through `clampWindow`, `InstrumentWindow`, and
+`TrackerWindow`. Legacy `ui.minWidth` / `ui.minHeight` still work
+as a fallback.
+
+Full reference: [`docs/21-window-sizing.md`](docs/21-window-sizing.md).
+
+### New: TrackerBus MIDI / CV expansion
+
+The TrackerBus pseudo-instrument gains:
+
+- Per-channel `chNN.vol.cv` — `ConstantSourceNode` emitting the
+  channel's linear gain as a DC CV signal.
+- Per-channel `chNN.midi` — row-derived events (volume column →
+  CC 7, pan → CC 10, porta → pitch bend, tempo → BPM).
+- `master.midi` — merged stream of all channels with the
+  originating tracker channel stamped on each event.
+- `master.midi.in` — cabled-in events drive tracker channel
+  playback routed by `event.channel`.
+
+### New: host-built MIDI pseudo-plugins
+
+Four new pinned pseudo-instruments in every workspace:
+
+- `__clock-source` — transport → `clock` / `transport` / `spp`
+  events on a `midi-out` port.
+- `__midi-clock-sink` — cable → hardware MIDI clock output.
+- `__ext-midi-in` — one `midi-out` port per connected `MIDIInput`
+  device; coexists with the existing MIDI Learn layer (tap model).
+- `__ext-midi-out` — one `midi-in` port per connected `MIDIOutput`
+  device; serialises `TrackerMidiEvent` back to MIDI bytes.
+
+### New capability flags
+
+- `midi-thru-custom` — plugin owns `midi-thru` emission via its
+  worklet's `midiOut` channel.
+- `assets` — plugin declares a top-level `assets` block.
+
+### Worklet contract additions
+
+- `this.port.postMessage({ type: "midiOut", event })` — emit a
+  `TrackerMidiEvent` from a worklet. The host finds the first
+  `midi-out` port on the plugin and dispatches through the MIDI
+  bus. Optional `portId` field routes to a specific output.
+
+### Validator updates
+
+`ntvalidate` gains rules for every new block:
+
+- `assets.*` structure + file-existence checks, sprite grid sanity,
+  asset-id uniqueness, reserved `__` prefix guard.
+- UI `image` / `sprite` controls → `asset` id exists in the matching
+  assets bucket.
+- `ui.windowSize` — positive dims, `min ≤ default ≤ max`,
+  parseable aspect ratio.
+- `kind: "midi"` recognised on every port entry.
+- `manifest.type: "control-source"` recognised; warn when the
+  ports block is present but declares no MIDI output.
+- `ports.midiIn` / `ports.midiThru` must be booleans and only
+  meaningful on instrument plugins.
+
+### Migration
+
+None required. Existing v4.x plugins (and v1–v3 plugins still
+running) load with the same fields, same capabilities, same
+behaviour. New features are additive.
+
+---
+
 ## v4.2 — Definitive sampler + patch distribution (2026-04)
 
 Closes every deferred caveat from the v4.1 Phase A/B/C rollout and

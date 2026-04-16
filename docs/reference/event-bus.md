@@ -261,13 +261,12 @@ Setting the CSS vars inside the iframe lets your own stylesheet pick
 them up via `var(--color-primary)` the same way the tracker's host
 chrome does.
 
-### `presetList` (v4)
+### `presetList`
 
-Fires once on iframe mount with the plugin's factory preset
-catalogue (when the plugin authors at least one). Lets the iframe
-render its own preset browser without polling. v4.0 fires the
-event on mount only; v4.1 will additionally refire after `presetSave`
-writes and on project reload.
+Fires on iframe mount with the plugin's factory preset catalogue
+(when the plugin authors at least one), and re-fires after every
+`presetSave` / `presetDelete` and on project reload. Lets the iframe
+render its own preset browser without polling.
 
 ```json
 {

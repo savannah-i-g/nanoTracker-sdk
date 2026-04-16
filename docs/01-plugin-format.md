@@ -67,7 +67,7 @@ reads the paths it knows about.
 | `schemaVersion` | yes | 1, 2, 3, or 4. **Default to 4 for new plugins.** See "Schema versions" below. |
 | `manifest.name` | yes | Display name. Goes into `id = "plugin:<name>@<version>"`. |
 | `manifest.version` | yes | Free-form string; convention is semver. |
-| `manifest.type` | yes | `"instrument"` or `"fx"`. From v4, `"fx"` means **pedal** (workspace floating window with patch cables) — see [`13-pedals.md`](13-pedals.md). |
+| `manifest.type` | yes | `"instrument"`, `"fx"`, or `"control-source"`. `"fx"` means **pedal** (workspace floating window with patch cables) — see [`13-pedals.md`](13-pedals.md). `"control-source"` plugins emit MIDI over cables instead of audio — see [`23-control-source-plugins.md`](23-control-source-plugins.md). |
 | `manifest.author` | no | Attribution — shows in plugin panels. |
 | `manifest.description` | no | One-line summary. |
 | `requires` | no | Array of capability flag strings. See "Capabilities" below. |
@@ -77,6 +77,9 @@ reads the paths it knows about.
 | `ui` | no | UI control definition. See [`03-ui-controls.md`](03-ui-controls.md). |
 | `loopPresets` | no | Instrument-only; step sequences exposed in the instrument panel. |
 | `presets` | no | Factory parameter snapshots; exposed as a dropdown. |
+| `assets` | no | Rich asset bundle — images, sprites, SVG, fonts, wavetables, JSON data, icon. See [`20-graphics-assets.md`](20-graphics-assets.md). |
+| `ui.windowSize` | no | Manifest-declared window envelope — default/min/max/resizable/aspectRatio. See [`21-window-sizing.md`](21-window-sizing.md). |
+| `ports.midiIn` / `midiThru` | no | Opt-out booleans for the implicit MIDI ports injected on every instrument plugin. See [`22-midi-ports.md`](22-midi-ports.md). |
 
 Unknown fields are **silently ignored** by the loader. Typos in field
 names won't error — they'll just have no effect. Run
@@ -268,6 +271,13 @@ pointing at the offending field or file path. Plugins never load
 - [`04-instruments.md`](04-instruments.md) — instrument DSP
 - [`05-fx-graphs.md`](05-fx-graphs.md) — FX declarative graphs
 - [`11-packaging.md`](11-packaging.md) — packaging and distribution
+- [`14-ports.md`](14-ports.md) — typed port model
+- [`20-graphics-assets.md`](20-graphics-assets.md) — rich assets
+- [`21-window-sizing.md`](21-window-sizing.md) — manifest window
+  envelope
+- [`22-midi-ports.md`](22-midi-ports.md) — MIDI cable layer
+- [`23-control-source-plugins.md`](23-control-source-plugins.md) —
+  MIDI-emitting plugin type
 - [`reference/schema.md`](reference/schema.md) — every `plugin.json`
   field in one place
 - [`reference/host-capabilities.md`](reference/host-capabilities.md) —

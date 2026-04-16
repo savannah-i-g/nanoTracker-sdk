@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 4,
+  "manifest": {
+    "name": "MY CTRL SRC",
+    "version": "0.1.0",
+    "type": "control-source",
+    "author": "you",
+    "description": "Minimal control-source template — 8-step MIDI pulse generator clocked by the host transport"
+  },
+  "requires": ["portsV4", "worklet-v3", "consumes-song-position"],
+  "ports": {
+    "outputs": [
+      { "id": "midi-out", "label": "MIDI OUT", "kind": "midi" }
+    ]
+  },
+  "dsp": {
+    "processorName": "my-ctrl-src-processor"
+  },
+  "parameters": [
+    { "key": "note",       "label": "NOTE",  "min": 0,    "max": 127, "default": 60,  "step": 1    },
+    { "key": "velocity",   "label": "VEL",   "min": 1,    "max": 127, "default": 100, "step": 1    },
+    { "key": "gate_frac",  "label": "GATE",  "min": 0.05, "max": 1.0, "default": 0.5, "step": 0.01 }
+  ],
+  "ui": {
+    "layout": "flex",
+    "accentColor": "#e6b84a",
+    "controls": [
+      { "type": "knob", "parameter": "note",      "label": "NOTE" },
+      { "type": "knob", "parameter": "velocity",  "label": "VEL"  },
+      { "type": "knob", "parameter": "gate_frac", "label": "GATE" }
+    ]
+  }
+}

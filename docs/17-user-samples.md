@@ -1,4 +1,4 @@
-# User-assignable sample slots (v4.1 Phase B)
+# User-assignable sample slots
 
 Plugins that want users to drop their own WAVs into a slot (drum
 racks, breakbeat choppers with a replaceable break, multi-sample
@@ -81,8 +81,9 @@ All fields are optional hints to the host:
   whatever zones are marked `userAssignable`.
 - `allowUserSwap` — set `false` to suppress the built-in slot panel
   (for plugins that provide their own webview picker).
-- `presetsCarrySamples` — reserved for v4.1.2 (Phase C), where
-  user preset saves can include sample assignments.
+- `presetsCarrySamples` — when present, user preset saves include
+  sample assignments. Requires `presetBank-v4`. See
+  [`18-preset-bank.md`](18-preset-bank.md).
 
 Declaring a `sampleBank` block requires the `userSamples` capability.
 
@@ -170,14 +171,9 @@ window.addEventListener("message", ev => {
 
 `ntvalidate` enforces all of the above — run it before packing.
 
-## What's deferred
+## Related docs
 
-- **User presets** — saving a user's parameter + sample-assignment
-  bundle as a reusable preset. Phase C (v4.1.2).
-- **`.ntpreset` distribution** — sharing preset files between users.
-  v4.2.
-- **Host-rendered slot panel** — the built-in panel under the
-  plugin window (as distinct from webview-authored pickers). Phase
-  B.1 follow-up.
-
-See [`../CHANGELOG.md`](../CHANGELOG.md) for the full roadmap.
+- [`16-sampler-node.md`](16-sampler-node.md) — the `type: "sampler"`
+  graph node that user-assignable zones live inside
+- [`18-preset-bank.md`](18-preset-bank.md) — saving and sharing
+  presets that include sample assignments

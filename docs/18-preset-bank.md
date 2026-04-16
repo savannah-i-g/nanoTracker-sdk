@@ -1,8 +1,7 @@
-# Preset bank (v4.1 Phase C)
+# Preset bank
 
-Plugins can now persist user-saved presets into one of two scopes
-via the webview bridge — both finished in v4.1 Phase C after being
-reserved (validated but not wired) in v4.0.
+Plugins persist user-saved presets into one of two scopes via the
+webview bridge.
 
 | Scope | Where it lives | When it's useful |
 |---|---|---|
@@ -113,8 +112,9 @@ When a preset with `sampleAssignments` is applied:
 
 Hashes that aren't present in the host's blob store (e.g. a preset
 references a WAV the current machine has never seen) silently
-revert that slot to its `fallbackFile`. Distributing presets with
-embedded blobs is the `.ntpreset` story — deferred to v4.2.
+revert that slot to its `fallbackFile`. To distribute presets with
+embedded blobs, use the `.ntpreset` format — see
+[`19-ntpreset.md`](19-ntpreset.md).
 
 ## Capability matrix
 
@@ -129,14 +129,14 @@ embedded blobs is the `.ntpreset` story — deferred to v4.2.
 for factory `sampleAssignments`; runtime failures on missing
 capability flags surface as `__nt_error` replies to the iframe.
 
-## Built-in slot panel (ships alongside Phase C)
+## Built-in slot panel
 
 Plugins that declare user slots but don't author a webview picker
 get a built-in host-rendered panel under the plugin UI — one row
 per slot with PICK and CLEAR. Opt out (e.g. to ship a richer
 webview-authored UI) by setting `sampleBank.allowUserSwap: false`.
 
-## Sharing presets — `.ntpreset` (v4.2)
+## Sharing presets — `.ntpreset`
 
 Webview-authored pickers can export/import user presets as
 `.ntpreset` archives — zip files carrying `preset.json` plus the
@@ -163,10 +163,9 @@ window.parent.postMessage({
 Import always lands in **library** scope; move to project scope via
 a follow-up `presetSave` if desired.
 
-## What's deferred
+## See also
 
-- **Cross-instrument performance snapshots** — one preset binding
-  state across multiple plugin instances. v5.0+.
-- **Preset-library cloud sync** — v5.0+.
-
-See [`../CHANGELOG.md`](../CHANGELOG.md) for the roadmap.
+- [`17-user-samples.md`](17-user-samples.md) — declaring
+  `userAssignable` zones and the `sampleBank` block
+- [`19-ntpreset.md`](19-ntpreset.md) — the `.ntpreset` distribution
+  format for sharing presets with embedded sample blobs
